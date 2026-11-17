@@ -494,6 +494,65 @@
         "launch": "kdenlive"
       },
       "hidden": false
+    },
+    {
+      "id": "pcbcraft",
+      "name": "PCBCraft",
+      "publisher": "Tangency Labs",
+      "category": "Engineering",
+      "tagline": "Electronics design and PCB layout for people and agents",
+      "accent": "#22c55e",
+      "website": "https://github.com/tangency-labs/pcbcraft",
+      "source": {
+        "type": "github_release",
+        "repo": "tangency-labs/pcbcraft",
+        "asset_pattern": "*linux-x86_64*"
+      },
+      "install": {
+        "type": "appimage",
+        "binary_name": "pcbcraft.AppImage",
+        "launch": "pcbcraft.AppImage"
+      },
+      "hidden": false
+    },
+    {
+      "id": "fieldcraft",
+      "name": "FieldCraft",
+      "publisher": "Tangency Labs",
+      "category": "Engineering",
+      "tagline": "Multi-physics simulation, FEA, heat transfer and CFD in pure Rust",
+      "accent": "#10b981",
+      "website": "https://github.com/tangency-labs/fieldcraft",
+      "source": {
+        "type": "github_release",
+        "repo": "tangency-labs/fieldcraft",
+        "asset_pattern": "fieldcraft-*-linux-x86_64.AppImage"
+      },
+      "install": {
+        "type": "appimage",
+        "binary_name": "fieldcraft.AppImage",
+        "launch": "fieldcraft.AppImage"
+      },
+      "hidden": false
+    },
+    {
+      "id": "lemon-studio",
+      "name": "Lemon Studio",
+      "publisher": "ItsAlphaNeon",
+      "category": "Audio",
+      "tagline": "Pattern-based digital audio workstation written in Rust",
+      "accent": "#eab308",
+      "website": "https://getlemonstudio.app",
+      "source": {
+        "type": "aur",
+        "package": "lemon-studio-git"
+      },
+      "install": {
+        "type": "aur",
+        "package": "lemon-studio-git",
+        "launch": "lemonstudio"
+      },
+      "hidden": false
     }
   ]
 }

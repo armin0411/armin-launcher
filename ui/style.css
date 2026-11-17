@@ -119,7 +119,7 @@ h1 { font-size: 24px; letter-spacing: -1px; font-weight: 700; margin: 0; }
 }
 .eyebrow { font-size: 10px; letter-spacing: 1.4px; color: var(--ink-soft); font-weight: 600; }
 .identity p { margin: 4px 0 0; }
-.mast-actions { display: flex; gap: 8px; }
+.mast-actions { display: flex; gap: 8px; align-items: center; }
 .mast-actions #theme { font-size: 18px; padding: 6px 11px; }
 
 /* Toolbar: Filters + Inline Counts + Controls */
@@ -543,21 +543,29 @@ main.list { padding-bottom: 24px; }
 
 footer {
   border-top: 1px solid var(--line);
-  padding: 14px 0 18px;
-  font-size: 9.5px;
+  padding: 11px 0 14px;
+  font-size: 10px;
+  font-weight: 600;
   letter-spacing: .8px;
-  color: var(--ink-soft);
+  color: var(--muted);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 20px;
+  gap: 16px;
 }
-.footer-sep { margin: 0 12px; color: var(--line); }
-.footer-right { display: flex; align-items: center; gap: 14px; }
+.footer-links { display: flex; align-items: center; gap: 12px; }
+.footer-icon {
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  transition: color .15s;
+}
+.footer-icon:hover { color: var(--strong); }
 .zoom { display: flex; border: 1px solid var(--line); }
-.zoom button { border: 0; padding: 5px 9px; font: 10px monospace; }
+.zoom button { border: 0; padding: 7px 9px; font: 10px monospace; }
 .zoom button + button { border-left: 1px solid var(--line); }
-.version-label { margin-left: 12px; font-size: 9.5px; }
 
 /* Modals */
 dialog {
@@ -653,9 +661,8 @@ dialog::backdrop { background: #000a; backdrop-filter: blur(3px); }
   .list .list-action { grid-column: 2; grid-row: 1 / 3; }
   .list .card .menu-wrap { grid-column: 3; grid-row: 1 / 3; }
   .list .action { min-width: 96px; padding: 7px 8px; }
-  .footer-right .zoom-label, .version-label { display: none; }
-  footer { font-size: 8.5px; letter-spacing: 0; }
-  .footer-sep { margin: 0 5px; }
+  .mast-actions .zoom { display: none; }
+  footer { font-size: 8.5px; letter-spacing: .4px; }
   .form-grid { grid-template-columns: 1fr; }
   .form-grid .full { grid-column: auto; }
   .form-grid .checkbox { padding-top: 0; }

@@ -115,7 +115,13 @@ function renderApps() {
   }).join('');
   container.innerHTML = html;
   $('#empty').hidden = apps.length !== 0;
-  $('#shown-count').textContent = `${apps.length} ${apps.length === 1 ? 'APP' : 'APPS'} SHOWN`;
+}
+function formatCheckedAgo(apps) {
+  const latest = apps.reduce((max, a) => Math.max(max, a.release?.checked || 0), 0);
+  if (!latest) return 'NOT CHECKED YET · USING GITHUB API AND SYSTEM PACKAGES';
+  const mins = Math.max(0, Math.floor((Date.now() / 1000 - latest) / 60));
+  const ago = mins < 1 ? 'JUST NOW' : mins < 60 ? `${mins} MIN AGO` : `${Math.floor(mins / 60)} HR AGO`;
+  return `CHECKED ${ago} · USING GITHUB API AND SYSTEM PACKAGES`;
 }
 function render() {
   const visible = state.apps.filter(a => !a.hidden);
@@ -124,6 +130,7 @@ function render() {
   $('#counts').innerHTML = `<div class="count"><strong>${visible.length.toString().padStart(2,'0')}</strong><span>IN LIBRARY</span></div><div class="count"><strong>${installed.toString().padStart(2,'0')}</strong><span>INSTALLED</span></div><div class="count update"><strong>${updates.toString().padStart(2,'0')}</strong><span>UPDATES</span></div>`;
   $('#all-count').textContent = visible.length;
   $('#update-count').textContent = updates || '';
+  $('#checked-info').textContent = formatCheckedAgo(state.apps);
   $('#refresh').disabled = state.busy;
   $('#update-all').disabled = state.busy || !updates;
   $('#refresh-icon').classList.toggle('spinning', !!state.refreshing);
