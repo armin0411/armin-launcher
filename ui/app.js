@@ -30,22 +30,22 @@ function savePref(patch) {
   fetch('/api/prefs', {method: 'POST', headers: {'Content-Type':'application/json', 'X-LaunchCraft-Token': token}, body: JSON.stringify(patch)}).catch(() => {});
 }
 const THEMES = [
-  {id:'default', name:'Default Dark', light:false, bg:'#1a1c22', canvasEnd:'#15171c', surface:'#121317', sunken:'#060607', hover:'#202229', ink:'#f4f4f6', inkSoft:'#b4b7c2', strong:'#ffffff', muted:'#93949d', line:'#33343b', accent:'#2d81ff', green:'#7bd5a7', red:'#ff817e'},
-  {id:'light', name:'Default Light', light:true, bg:'#f2f1ee', canvasEnd:'#eae9e5', surface:'#faf9f6', sunken:'#e7e6e2', hover:'#eae9e5', ink:'#1e1f24', inkSoft:'#494b54', strong:'#060607', muted:'#62636c', line:'#cdcdc8', accent:'#2d81ff', green:'#167846', red:'#b32327'},
-  {id:'catppuccin', name:'Catppuccin Mocha', light:false, bg:'#342941', canvasEnd:'#242945', surface:'#242133', sunken:'#1a1828', hover:'#373148', ink:'#f2e7fc', inkSoft:'#dcd0eb', strong:'#ffffff', muted:'#cbbfd8', line:'#4a415c', accent:'#d8b5ff', green:'#ade4bc', red:'#f7b1c2'},
-  {id:'nord', name:'Nord', light:false, bg:'#2e3440', canvasEnd:'#252b37', surface:'#232832', sunken:'#1b1f27', hover:'#3b4252', ink:'#eceff4', inkSoft:'#d8dee9', strong:'#ffffff', muted:'#aeb8cc', line:'#434c5e', accent:'#88c0d0', green:'#a3be8c', red:'#bf616a'},
-  {id:'gruvbox', name:'Gruvbox', light:false, bg:'#2c2923', canvasEnd:'#26231e', surface:'#24211c', sunken:'#1c1c18', hover:'#393328', ink:'#faebca', inkSoft:'#e6d2a9', strong:'#fff6e0', muted:'#cabb9c', line:'#544938', accent:'#f3bb61', green:'#b9ca79', red:'#ffa492'},
-  {id:'tokyo-night', name:'Tokyo Night', light:false, bg:'#192e43', canvasEnd:'#2b213f', surface:'#182033', sunken:'#14192a', hover:'#263047', ink:'#e8edff', inkSoft:'#cad5f2', strong:'#ffffff', muted:'#b8c5e3', line:'#384763', accent:'#a7c5ff', green:'#a7d598', red:'#ffafb9'},
-  {id:'dracula', name:'Dracula', light:false, bg:'#332338', canvasEnd:'#202134', surface:'#241c2d', sunken:'#1b1723', hover:'#382b40', ink:'#fff0fa', inkSoft:'#ebd6e6', strong:'#ffffff', muted:'#cfbcd2', line:'#513951', accent:'#e9a1f2', green:'#8ee6ae', red:'#ffa0aa'},
-  {id:'miasma', name:'Miasma', light:false, bg:'#332f20', canvasEnd:'#202e25', surface:'#252b20', sunken:'#1a2119', hover:'#353b2c', ink:'#f2edd1', inkSoft:'#d9cba5', strong:'#fffbe6', muted:'#cccdb9', line:'#484e39', accent:'#c8d282', green:'#b6d4ab', red:'#f4bfb2'},
-  {id:'vscode-dark', name:'VS Code Dark', light:false, bg:'#19212c', canvasEnd:'#19212c', surface:'#141d28', sunken:'#101822', hover:'#222f3d', ink:'#edf4fb', inkSoft:'#c4d4e2', strong:'#ffffff', muted:'#b5c6d5', line:'#354455', accent:'#8acbff', green:'#91d4a8', red:'#ffb0a4'},
-  {id:'solarized-dark', name:'Solarized Dark', light:false, bg:'#07323a', canvasEnd:'#07323a', surface:'#062a30', sunken:'#03232a', hover:'#0e3c44', ink:'#f4eed8', inkSoft:'#d8d3bf', strong:'#fdf8e6', muted:'#a3b8b6', line:'#235056', accent:'#2aa198', green:'#859900', red:'#dc322f'},
-  {id:'catppuccin-latte', name:'Catppuccin Latte', light:true, bg:'#fbf0ef', canvasEnd:'#e8e8f8', surface:'#f6f2fa', sunken:'#ede8f3', hover:'#e8dff2', ink:'#40334f', inkSoft:'#554564', strong:'#251b30', muted:'#63546f', line:'#d8cfe2', accent:'#773999', green:'#336444', red:'#9a374d'},
-  {id:'nord-light', name:'Nord Light', light:true, bg:'#f2f8fa', canvasEnd:'#e0ebf2', surface:'#f1f6f9', sunken:'#e5edf2', hover:'#dae7ef', ink:'#22384b', inkSoft:'#354f63', strong:'#112230', muted:'#4a6171', line:'#c3d4df', accent:'#176479', green:'#406745', red:'#a43648'},
-  {id:'gruvbox-light', name:'Gruvbox Light', light:true, bg:'#f9edcd', canvasEnd:'#f9edcd', surface:'#f8f0db', sunken:'#f0e2c1', hover:'#edddb7', ink:'#413321', inkSoft:'#57442e', strong:'#261d12', muted:'#69563d', line:'#dacba9', accent:'#8a471c', green:'#4e601c', red:'#a13224'},
-  {id:'tokyo-day', name:'Tokyo Day', light:true, bg:'#e9f4fc', canvasEnd:'#eee7fa', surface:'#f1f3fc', sunken:'#e5e9f7', hover:'#dfe6fa', ink:'#293956', inkSoft:'#435271', strong:'#141e33', muted:'#515e75', line:'#c9d2e7', accent:'#3b54a6', green:'#366744', red:'#a13853'},
-  {id:'vscode-light', name:'VS Code Light', light:true, bg:'#f7f9fc', canvasEnd:'#f7f9fc', surface:'#f3f6fb', sunken:'#e9eef5', hover:'#e0eaf7', ink:'#1d3048', inkSoft:'#364c65', strong:'#0d1929', muted:'#4e6277', line:'#cdd8e6', accent:'#075da7', green:'#266637', red:'#b32f35'},
-  {id:'miasma-light', name:'Miasma Light', light:true, bg:'#f6f1db', canvasEnd:'#e6eddc', surface:'#f1f2e3', sunken:'#e5e8d4', hover:'#e1e5c9', ink:'#353a25', inkSoft:'#4e543a', strong:'#1f2314', muted:'#575d45', line:'#cdd3b8', accent:'#4c6121', green:'#356449', red:'#973e34'},
+  {id:'default', name:'Default Dark', light:false, bg:'#20232b', canvasEnd:'#1a1d24', surface:'#101217', sunken:'#060607', hover:'#242832', ink:'#f4f4f6', inkSoft:'#b4b7c2', strong:'#ffffff', muted:'#93949d', line:'#383b45', accent:'#2d81ff', green:'#7bd5a7', red:'#ff817e'},
+  {id:'light', name:'Default Light', light:true, bg:'#e7e5e0', canvasEnd:'#dfddd7', surface:'#fbfaf7', sunken:'#e7e6e2', hover:'#f1efe9', ink:'#1e1f24', inkSoft:'#494b54', strong:'#060607', muted:'#62636c', line:'#c4c3bd', accent:'#2d81ff', green:'#167846', red:'#b32327'},
+  {id:'catppuccin', name:'Catppuccin Mocha', light:false, bg:'#362b45', canvasEnd:'#2a2e4a', surface:'#1b1929', sunken:'#12101d', hover:'#3a344d', ink:'#f2e7fc', inkSoft:'#dcd0eb', strong:'#ffffff', muted:'#cbbfd8', line:'#4e4461', accent:'#d8b5ff', green:'#ade4bc', red:'#f7b1c2'},
+  {id:'nord', name:'Nord', light:false, bg:'#333a47', canvasEnd:'#2b323f', surface:'#1c212a', sunken:'#141820', hover:'#3d4555', ink:'#eceff4', inkSoft:'#d8dee9', strong:'#ffffff', muted:'#aeb8cc', line:'#475164', accent:'#88c0d0', green:'#a3be8c', red:'#bf616a'},
+  {id:'gruvbox', name:'Gruvbox', light:false, bg:'#332f28', canvasEnd:'#2c2822', surface:'#1b1814', sunken:'#13110e', hover:'#3d362b', ink:'#faebca', inkSoft:'#e6d2a9', strong:'#fff6e0', muted:'#cabb9c', line:'#594d3b', accent:'#f3bb61', green:'#b9ca79', red:'#ffa492'},
+  {id:'tokyo-night', name:'Tokyo Night', light:false, bg:'#1f344c', canvasEnd:'#2f2545', surface:'#131929', sunken:'#0d111d', hover:'#28324b', ink:'#e8edff', inkSoft:'#cad5f2', strong:'#ffffff', muted:'#b8c5e3', line:'#3b4b68', accent:'#a7c5ff', green:'#a7d598', red:'#ffafb9'},
+  {id:'dracula', name:'Dracula', light:false, bg:'#37263d', canvasEnd:'#26263b', surface:'#1b1523', sunken:'#130f19', hover:'#3b2e44', ink:'#fff0fa', inkSoft:'#ebd6e6', strong:'#ffffff', muted:'#cfbcd2', line:'#563d56', accent:'#e9a1f2', green:'#8ee6ae', red:'#ffa0aa'},
+  {id:'miasma', name:'Miasma', light:false, bg:'#373323', canvasEnd:'#27352c', surface:'#1a1f17', sunken:'#121610', hover:'#383e2f', ink:'#f2edd1', inkSoft:'#d9cba5', strong:'#fffbe6', muted:'#cccdb9', line:'#4d543e', accent:'#c8d282', green:'#b6d4ab', red:'#f4bfb2'},
+  {id:'vscode-dark', name:'VS Code Dark', light:false, bg:'#1f2835', canvasEnd:'#1c2430', surface:'#101721', sunken:'#0a1018', hover:'#243242', ink:'#edf4fb', inkSoft:'#c4d4e2', strong:'#ffffff', muted:'#b5c6d5', line:'#39495c', accent:'#8acbff', green:'#91d4a8', red:'#ffb0a4'},
+  {id:'solarized-dark', name:'Solarized Dark', light:false, bg:'#0b3c46', canvasEnd:'#09363f', surface:'#042228', sunken:'#02191e', hover:'#10424b', ink:'#f4eed8', inkSoft:'#d8d3bf', strong:'#fdf8e6', muted:'#a3b8b6', line:'#26575e', accent:'#2aa198', green:'#859900', red:'#dc322f'},
+  {id:'catppuccin-latte', name:'Catppuccin Latte', light:true, bg:'#ece2e8', canvasEnd:'#dfdcf0', surface:'#fbf9fe', sunken:'#e4dceb', hover:'#f1ebf8', ink:'#40334f', inkSoft:'#554564', strong:'#251b30', muted:'#63546f', line:'#cfc5da', accent:'#773999', green:'#336444', red:'#9a374d'},
+  {id:'nord-light', name:'Nord Light', light:true, bg:'#e4edf2', canvasEnd:'#d6e2eb', surface:'#f8fbfd', sunken:'#dde7ee', hover:'#edf4f9', ink:'#22384b', inkSoft:'#354f63', strong:'#112230', muted:'#4a6171', line:'#bcced9', accent:'#176479', green:'#406745', red:'#a43648'},
+  {id:'gruvbox-light', name:'Gruvbox Light', light:true, bg:'#eee0be', canvasEnd:'#e6d6b0', surface:'#fcf6e6', sunken:'#e5d5ae', hover:'#f4ebd2', ink:'#413321', inkSoft:'#57442e', strong:'#261d12', muted:'#69563d', line:'#d2c19c', accent:'#8a471c', green:'#4e601c', red:'#a13224'},
+  {id:'tokyo-day', name:'Tokyo Day', light:true, bg:'#dde9f5', canvasEnd:'#e2dcf2', surface:'#f8fafe', sunken:'#dce3f2', hover:'#ecf1fc', ink:'#293956', inkSoft:'#435271', strong:'#141e33', muted:'#515e75', line:'#c0cae0', accent:'#3b54a6', green:'#366744', red:'#a13853'},
+  {id:'vscode-light', name:'VS Code Light', light:true, bg:'#e5ebf3', canvasEnd:'#dfe6f0', surface:'#fbfcfe', sunken:'#dde4ee', hover:'#eef3fa', ink:'#1d3048', inkSoft:'#364c65', strong:'#0d1929', muted:'#4e6277', line:'#c4d0e0', accent:'#075da7', green:'#266637', red:'#b32f35'},
+  {id:'miasma-light', name:'Miasma Light', light:true, bg:'#eae4cc', canvasEnd:'#dce4d0', surface:'#fafaf0', sunken:'#dde0cb', hover:'#f0f1e0', ink:'#353a25', inkSoft:'#4e543a', strong:'#1f2314', muted:'#575d45', line:'#c3caae', accent:'#4c6121', green:'#356449', red:'#973e34'},
 ];
 let currentTheme = localStorage.getItem('launchcraft-theme') || 'default';
 if (!THEMES.some(t => t.id === currentTheme)) currentTheme = currentTheme === 'dark' ? 'default' : 'default';
@@ -267,8 +267,8 @@ function renderApps() {
     const accent = /^#[0-9a-f]{6}$/i.test(a.accent) ? a.accent : '#2d81ff';
     const meta = appDetails[a.id] || {};
     const accent2 = /^#[0-9a-f]{6}$/i.test(meta.accent2 || '') ? meta.accent2 : accent;
-    const fadeA = meta.accent2 ? '11%' : `${6 + (idx % 4)}%`;
-    const fadeB = meta.accent2 ? '7%' : `${2 + (idx % 3)}%`;
+    const fadeA = meta.accent2 ? '5%' : `${3 + (idx % 2)}%`;
+    const fadeB = meta.accent2 ? '2%' : `${1 + (idx % 2)}%`;
     const badge = `<span class="badge">${escapeHTML(a.category)}</span>`;
     const released = formatReleased(a);
     const releasedLine = released ? `<span class="last-updated">Last updated: ${escapeHTML(released)}</span>` : '';
@@ -311,8 +311,13 @@ function render() {
   $('#warnings').hidden = !state.warnings?.length;
   $('#warnings pre').textContent = (state.warnings || []).join('\n\n');
   if (state.refreshing) setNotice('Refreshing release metadata and package updates…');
+  else if (state.ai_running) setNotice('AI Maintain running — auditing catalog and assets…');
   else if (state.busy) setNotice('Working — keep this window open to follow progress.');
   else setNotice(state.notice || 'Ready. Refresh to check the latest releases.', !!state.last_error);
+  const aiLog = $('#ai-log');
+  if (aiLog && state.ai_report) aiLog.textContent = state.ai_report;
+  const aiBtn = $('#ai-maintain');
+  if (aiBtn) aiBtn.disabled = !!(state.busy || state.ai_running);
   renderApps();
 }
 function showModal(title, content, wide = false) {
@@ -604,6 +609,25 @@ $('#lightbox').addEventListener('click', event => {
   if (event.target === $('#lightbox') || event.target === $('#lightbox-stage')) $('#lightbox').close();
 });
 $('#refresh').onclick = async () => {try {await api('refresh');} catch (e) {setNotice(e.message,true);}};
+function openAiMaintain() {
+  const keyStatus = state.ai_configured ? 'API key configured locally (enter a new one below to replace it).' : 'No OpenAI API key configured yet.';
+  showModal('AI Maintain (Hybrid)', `<p class="muted" style="margin:0 0 14px">Python gathers live GitHub/AUR release facts and checks local icons/screenshots, then ChatGPT proposes validated updates.</p><form id="ai-form" class="form-grid"><label class="full">OpenAI API Key <span class="field-hint">(${escapeHTML(keyStatus)})</span><input name="api_key" type="password" placeholder="${state.ai_configured ? '•••••••• (saved locally)' : 'sk-...'}"></label><label>App to add or check <span class="field-hint">(optional)</span><input name="prompt" placeholder="Leave blank for full catalog audit, or e.g. Zed"></label><label>Model<select name="model"><option value="gpt-4o-mini">gpt-4o-mini (fast &amp; cheap)</option><option value="gpt-4o">gpt-4o</option><option value="o4-mini">o4-mini</option></select></label><label class="checkbox full"><input name="push" type="checkbox"> Run unit tests &amp; push changes to GitHub if updated</label><div class="modal-actions full"><button type="button" id="ai-cancel">Close</button><button type="submit" class="primary">Run AI Maintain</button></div></form><pre id="ai-log" class="release-notes" style="margin-top:14px">${escapeHTML(state.ai_report || 'Ready.')}</pre>`);
+  $('#ai-cancel').onclick = () => $('#modal').close();
+  $('#ai-form').onsubmit = async event => {
+    event.preventDefault();
+    const f = Object.fromEntries(new FormData(event.target));
+    const btn = $('button[type=submit]', event.target);
+    btn.disabled = true;
+    try {
+      await api('ai_maintain', {api_key: f.api_key || '', prompt: f.prompt || '', model: f.model, push: !!f.push});
+    } catch (error) {
+      $('#ai-log').textContent = 'Error: ' + error.message;
+    } finally {
+      btn.disabled = false;
+    }
+  };
+}
+$('#ai-maintain').onclick = openAiMaintain;
 $('#update-all').onclick = async () => {try {await api('install');} catch (e) {setNotice(e.message,true);}};
 applyZoom(zoom, false);
 setView(view, false);

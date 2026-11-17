@@ -188,7 +188,7 @@ class Engine:
             self.state = json.loads(self.state_path.read_text())
         except (OSError, ValueError):
             self.state = {}
-        for key in ('installed', 'releases', 'http', 'prefs'):
+        for key in ('installed', 'releases', 'http', 'prefs', 'secrets'):
             self.state.setdefault(key, {})
         self.api_base, self.web_base = api_base.rstrip('/'), web_base.rstrip('/')
         self.gh_token = self._detect_gh_token() if self.api_base == 'https://api.github.com' else ''
@@ -196,6 +196,8 @@ class Engine:
         self.jobs = {}
         self.busy = False
         self.refreshing = False
+        self.ai_running = False
+        self.ai_report = ''
         self.cancel = threading.Event()
         self.pkg_lock = threading.Lock()
         self.active_workers = 0
@@ -331,7 +333,7 @@ class Engine:
                 app['icon'] = self.icon_url(app['id'])
                 app['compatible'] = self.is_compatible(app)
                 app['data_paths'] = [str(p) for p in self.user_data_paths(app)]
-            return dict(apps=apps, busy=self.busy, refreshing=self.refreshing, notice=self.notice, last_error=self.last_error, warnings=self.warnings, platform=self.platform, prefs=copy.deepcopy(self.state.get('prefs', {})), revision=time.monotonic())
+            return dict(apps=apps, busy=self.busy, refreshing=self.refreshing, ai_running=self.ai_running, ai_report=self.ai_report, ai_configured=bool(self.get_openai_key()), notice=self.notice, last_error=self.last_error, warnings=self.warnings, platform=self.platform, prefs=copy.deepcopy(self.state.get('prefs', {})), revision=time.monotonic())
 
     def newer(self, latest, installed):
         if installed == 'unknown':
@@ -350,6 +352,185 @@ class Engine:
         if pb[:len(pa)] == pa:
             return False
         return pa > pb
+
+    def get_openai_key(self):
+        return os.environ.get('OPENAI_API_KEY', '').strip() or self.state.get('secrets', {}).get('openai_api_key', '').strip()
+
+    def ai_maintain(self, prompt='', push=False, model='gpt-4o-mini'):
+        key = self.get_openai_key()
+        if not key:
+            raise ValueError('Set an OpenAI API key first')
+        with self.lock:
+            if self.busy or self.ai_running:
+                raise ValueError('Another task is running')
+            self.ai_running = True
+            self.busy = True
+            self.ai_report = 'Gathering live release and asset metadata…'
+        self.emit('state', self.snapshot())
+
+        def work():
+            log = []
+            try:
+                linux_cat = json.loads((ROOT / 'catalog.json').read_text())
+                win_path = ROOT / 'catalog.windows.json'
+                win_cat = json.loads(win_path.read_text()) if win_path.is_file() else {'version': 1, 'apps': []}
+                det_path = ROOT / 'ui' / 'details.json'
+                details = json.loads(det_path.read_text()) if det_path.is_file() else {}
+
+                # 1. Gather live facts in Python
+                facts = []
+                for a in linux_cat['apps']:
+                    aid = a['id']
+                    has_icon = any((ROOT / 'ui' / 'icons' / f'{aid}.{e}').is_file() for e in ('png', 'svg'))
+                    shots = [s for s in details.get(aid, {}).get('shots', []) if s.get('url', '').startswith('/shots/') and (ROOT / 'ui' / s['url'].lstrip('/')).is_file()]
+                    item = {'id': aid, 'name': a['name'], 'source': a['source'], 'install': a['install'], 'has_icon': has_icon, 'local_shots': len(shots)}
+                    if a['source']['type'] == 'github_release':
+                        try:
+                            with self.request(f'{self.api_base}/repos/{a["source"]["repo"]}/releases/latest', {'Accept': 'application/vnd.github+json'}) as r:
+                                rel = json.load(r)
+                            item['latest_tag'] = rel.get('tag_name')
+                            item['assets'] = [x['name'] for x in rel.get('assets', [])[:25]]
+                        except urllib.error.HTTPError as e:
+                            item['api_status'] = e.code
+                        except Exception as e:
+                            item['api_error'] = str(e)
+                    facts.append(item)
+
+                search_hits = []
+                if prompt.strip():
+                    q = urllib.parse.quote(prompt.strip())
+                    try:
+                        with self.request(f'{self.api_base}/search/repositories?q={q}&per_page=5', {'Accept': 'application/vnd.github+json'}) as r:
+                            for repo in json.load(r).get('items', []):
+                                rname = repo['full_name']
+                                assets = []
+                                try:
+                                    with self.request(f'{self.api_base}/repos/{rname}/releases/latest', {'Accept': 'application/vnd.github+json'}) as rr:
+                                        assets = [x['name'] for x in json.load(rr).get('assets', [])[:25]]
+                                except Exception:
+                                    pass
+                                search_hits.append({'repo': rname, 'description': repo.get('description'), 'homepage': repo.get('homepage'), 'assets': assets})
+                    except Exception:
+                        pass
+                    try:
+                        with urllib.request.urlopen(f'https://aur.archlinux.org/rpc/v5/search/{q}', timeout=10) as r:
+                            search_hits.append({'aur': [x['Name'] for x in json.loads(r.read()).get('results', [])[:5]]})
+                    except Exception:
+                        pass
+
+                log.append(f'Checked {len(facts)} apps' + (f' + search hits for "{prompt.strip()}"' if prompt.strip() else ''))
+                self.ai_report = '\n'.join(log) + '\nAsking ChatGPT to review catalog & assets…'
+                self.emit('state', self.snapshot())
+
+                # 2. Call ChatGPT API
+                sys_prompt = (
+                    'You maintain Armin Launcher (catalog.json for Linux x86_64 and catalog.windows.json for Windows). '
+                    'Given the live app facts and optional user request, return ONLY valid JSON with keys: '
+                    '{"summary": str, "linux_updates": [full_app_obj], "win_updates": [full_app_obj], '
+                    '"remove_ids": [str], "assets": [{"id": str, "icon_url": str|null, "shot_url": str|null, "shot_caption": str, "about": str, "features": [{"title": str, "text": str}]}]}. '
+                    'Only suggest real, verified assets seen in the provided facts or search_hits. Keep lists empty if no changes are needed.'
+                )
+                payload = json.dumps({
+                    'model': model or 'gpt-4o-mini',
+                    'response_format': {'type': 'json_object'},
+                    'messages': [
+                        {'role': 'system', 'content': sys_prompt},
+                        {'role': 'user', 'content': json.dumps({'request': prompt.strip() or 'Audit catalog for better install/update methods, unreleased removals, and missing icons/screenshots.', 'facts': facts, 'search_hits': search_hits})},
+                    ],
+                }).encode()
+                req = urllib.request.Request('https://api.openai.com/v1/chat/completions', data=payload, headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {key}'}, method='POST')
+                with urllib.request.urlopen(req, timeout=60) as resp:
+                    ai_data = json.loads(resp.read())
+                plan = json.loads(ai_data['choices'][0]['message']['content'])
+                log.append('AI summary: ' + str(plan.get('summary', 'Done.')))
+
+                # 3. Validate & apply safely
+                new_linux = copy.deepcopy(linux_cat)
+                new_win = copy.deepcopy(win_cat)
+                remove_ids = set(plan.get('remove_ids') or [])
+                if remove_ids:
+                    new_linux['apps'] = [a for a in new_linux['apps'] if a['id'] not in remove_ids]
+                    new_win['apps'] = [a for a in new_win['apps'] if a['id'] not in remove_ids]
+                    log.append('Removed: ' + ', '.join(sorted(remove_ids)))
+
+                def upsert(cat_obj, items):
+                    for item in items or []:
+                        idx = next((i for i, x in enumerate(cat_obj['apps']) if x['id'] == item.get('id')), None)
+                        if idx is None:
+                            cat_obj['apps'].append(item)
+                        else:
+                            cat_obj['apps'][idx] = item
+
+                upsert(new_linux, plan.get('linux_updates'))
+                upsert(new_win, plan.get('win_updates'))
+                validate_catalog(new_linux)
+                if new_win['apps']:
+                    validate_catalog(new_win)
+
+                changed = False
+                if new_linux != linux_cat:
+                    atomic_json(ROOT / 'catalog.json', new_linux)
+                    changed = True
+                if new_win != win_cat and new_win['apps']:
+                    atomic_json(win_path, new_win)
+                    changed = True
+
+                for asset in plan.get('assets') or []:
+                    aid = asset.get('id', '')
+                    if not re.fullmatch(r'[a-z0-9-]+', aid):
+                        continue
+                    if asset.get('icon_url'):
+                        try:
+                            data = urllib.request.urlopen(urllib.request.Request(asset['icon_url'], headers={'User-Agent': 'ArminLauncher/1.0'}), timeout=15).read()
+                            ext = '.svg' if b'<svg' in data[:400].lower() else '.png'
+                            (ROOT / 'ui/icons' / f'{aid}{ext}').write_bytes(data)
+                            changed = True
+                            log.append(f'Saved icon for {aid}')
+                        except Exception:
+                            pass
+                    if asset.get('shot_url'):
+                        try:
+                            data = urllib.request.urlopen(urllib.request.Request(asset['shot_url'], headers={'User-Agent': 'ArminLauncher/1.0'}), timeout=20).read()
+                            ext = '.png' if asset['shot_url'].lower().endswith('.png') else '.webp' if asset['shot_url'].lower().endswith('.webp') else '.jpg'
+                            fname = f'{aid}-1{ext}'
+                            (ROOT / 'ui/shots' / fname).write_bytes(data)
+                            entry = details.setdefault(aid, {'about': asset.get('about', ''), 'features': asset.get('features', []), 'shots': []})
+                            entry['shots'] = [{'caption': asset.get('shot_caption') or aid, 'url': f'/shots/{fname}'}]
+                            atomic_json(det_path, details)
+                            changed = True
+                            log.append(f'Saved screenshot for {aid}')
+                        except Exception:
+                            pass
+
+                if changed:
+                    t = subprocess.run([sys.executable, '-m', 'unittest', 'discover', '-s', 'tests'], cwd=ROOT, capture_output=True, text=True, timeout=60)
+                    if t.returncode != 0:
+                        raise ValueError('Tests failed after AI update:\n' + t.stderr[-500:])
+                    log.append('All unit tests passed.')
+                    if push and shutil.which('git'):
+                        subprocess.run(['git', 'add', '-A', 'catalog.json', 'catalog.windows.json', 'ui/details.json', 'ui/icons', 'ui/shots'], cwd=ROOT, check=False)
+                        c = subprocess.run(['git', 'commit', '-m', 'AI Maintain catalog update'], cwd=ROOT, capture_output=True, text=True)
+                        if c.returncode == 0:
+                            p = subprocess.run(['git', 'push', 'origin', 'main'], cwd=ROOT, capture_output=True, text=True)
+                            log.append('Pushed to GitHub.' if p.returncode == 0 else f'Git push error: {p.stderr.strip()}')
+                else:
+                    log.append('Catalog already up to date — no changes needed.')
+
+                self.ai_report = '\n'.join(log)
+                self.notice = 'AI Maintain complete.'
+            except Exception as e:
+                log.append(f'Error: {e}')
+                self.ai_report = '\n'.join(log)
+                self.last_error = str(e)
+                self.notice = str(e)
+                self.emit('error', {'message': str(e)})
+            finally:
+                with self.lock:
+                    self.ai_running = False
+                    self.busy = self.active_workers > 0
+                self.emit('state', self.snapshot())
+
+        threading.Thread(target=work, name='armin-ai-maintain', daemon=True).start()
 
     def _detect_gh_token(self):
         for env_key in ('GITHUB_TOKEN', 'GH_TOKEN'):
@@ -1183,6 +1364,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             path = urllib.parse.urlparse(self.path).path
             if path == '/api/refresh':
                 engine.start('refresh')
+            elif path == '/api/ai_maintain':
+                if 'api_key' in data and str(data['api_key']).strip():
+                    with engine.lock:
+                        engine.state.setdefault('secrets', {})['openai_api_key'] = str(data['api_key']).strip()
+                        engine.save()
+                engine.ai_maintain(prompt=str(data.get('prompt', '')), push=bool(data.get('push', False)), model=str(data.get('model', 'gpt-4o-mini')))
+                self.json(200, engine.snapshot())
+                return
             elif path == '/api/install':
                 ids = data.get('ids')
                 if ids is not None and (not isinstance(ids, list) or not all(isinstance(i, str) for i in ids)):

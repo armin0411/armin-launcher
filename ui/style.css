@@ -1,15 +1,16 @@
 :root {
   color-scheme: dark;
-  --bg: #1a1c22;
-  --canvas-end: #15171c;
+  --bg: #20232b;
+  --canvas-end: #1a1d24;
   --sunken: #060607;
-  --surface: #121317;
-  --hover: #22252d;
+  --surface: #101217;
+  --hover: #242832;
   --ink: #f4f4f6;
   --ink-soft: #b4b7c2;
   --strong: #ffffff;
   --muted: #93949d;
-  --line: #33343b;
+  --line: #383b45;
+  --card-shadow: 0 2px 10px rgba(0, 0, 0, .24);
   --accent: #2d81ff;
   --green: #7bd5a7;
   --red: #ff817e;
@@ -34,16 +35,17 @@ body {
 
 body.light {
   color-scheme: light;
-  --bg: #f2f1ee;
-  --canvas-end: #eae9e5;
+  --bg: #e7e5e0;
+  --canvas-end: #dfddd7;
   --sunken: #e7e6e2;
-  --surface: #faf9f6;
-  --hover: #eae9e5;
+  --surface: #fbfaf7;
+  --hover: #f1efe9;
   --ink: #1e1f24;
   --ink-soft: #494b54;
   --strong: #060607;
   --muted: #62636c;
-  --line: #cdcdc8;
+  --line: #c4c3bd;
+  --card-shadow: 0 2px 10px rgba(0, 0, 0, .07);
   --green: #167846;
   --red: #b32327;
 }
@@ -246,12 +248,12 @@ h1 { font-size: 16px; letter-spacing: -.4px; font-weight: 700; margin: 0; white-
   justify-content: center;
   gap: 7px;
 }
-#refresh {
+#refresh, #ai-maintain {
   background: var(--surface);
   color: var(--ink);
   border-color: var(--line);
 }
-#refresh:hover:not(:disabled) {
+#refresh:hover:not(:disabled), #ai-maintain:hover:not(:disabled) {
   background: var(--hover);
   border-color: var(--muted);
   color: var(--strong);
@@ -310,16 +312,17 @@ main.list .section-divider {
 }
 .card {
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 1px solid color-mix(in srgb, var(--line) 82%, var(--muted));
+  box-shadow: var(--card-shadow);
   position: relative;
   min-width: 0;
   cursor: pointer;
-  transition: border-color .18s ease, background .18s ease;
+  transition: border-color .18s ease, background .18s ease, box-shadow .18s ease;
 }
 .card.is-installed {
   background: linear-gradient(135deg,
-    color-mix(in srgb, var(--app-accent) var(--fade-a, 7%), var(--surface)) 0%,
-    color-mix(in srgb, var(--app-accent2, var(--app-accent)) var(--fade-b, 3%), var(--surface)) 58%,
+    color-mix(in srgb, var(--app-accent) var(--fade-a, 4%), var(--surface)) 0%,
+    color-mix(in srgb, var(--app-accent2, var(--app-accent)) var(--fade-b, 2%), var(--surface)) 48%,
     var(--surface) 100%);
 }
 .card:before {
@@ -328,17 +331,26 @@ main.list .section-divider {
   left: -1px;
   top: -1px;
   bottom: -1px;
-  width: 3px;
-  background: linear-gradient(180deg, var(--app-accent), var(--app-accent2, var(--app-accent)));
+  width: 24px;
+  pointer-events: none;
+  z-index: 1;
+  background: linear-gradient(180deg,
+    var(--app-accent) 0%,
+    var(--app-accent2, var(--app-accent)) 62%,
+    color-mix(in srgb, var(--app-accent2, var(--app-accent)) 35%, transparent) 100%);
+  -webkit-mask-image: linear-gradient(90deg, #000 0px, #000 3px, rgba(0, 0, 0, 0.24) 3px, transparent 100%);
+  mask-image: linear-gradient(90deg, #000 0px, #000 3px, rgba(0, 0, 0, 0.24) 3px, transparent 100%);
   opacity: 0;
-  transition: opacity .18s ease;
+  transform: scaleY(0.92);
+  transform-origin: center;
+  transition: opacity .18s ease, transform .18s ease;
 }
 .card:hover,
 .card:focus-within {
   border-color: color-mix(in srgb, var(--app-accent) 45%, var(--line));
   background: linear-gradient(135deg,
-    color-mix(in srgb, var(--app-accent) calc(var(--fade-a, 7%) + 5%), var(--hover)) 0%,
-    color-mix(in srgb, var(--app-accent2, var(--app-accent)) calc(var(--fade-b, 3%) + 3%), var(--hover)) 60%,
+    color-mix(in srgb, var(--app-accent) calc(var(--fade-a, 4%) + 2%), var(--hover)) 0%,
+    color-mix(in srgb, var(--app-accent2, var(--app-accent)) calc(var(--fade-b, 2%) + 1%), var(--hover)) 52%,
     var(--hover) 100%);
 }
 .card.has-duo-fade.is-installed .app-title h3 .name-main,
@@ -351,6 +363,7 @@ main.list .section-divider {
 .card:hover:before,
 .card:focus-within:before {
   opacity: 1;
+  transform: scaleY(1);
 }
 .card.is-not-installed .app-icon img {
   filter: grayscale(1) opacity(0.6);
