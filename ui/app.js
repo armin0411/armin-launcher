@@ -288,6 +288,17 @@ function addApp() {
   const form = $('#add-form');
   const source = form.elements.source_type;
   const install = form.elements.install_type;
+  let idTouched = false;
+  form.elements.id.addEventListener('input', () => { idTouched = !!form.elements.id.value; });
+  form.elements.name.addEventListener('input', () => {
+    if (!idTouched) {
+      form.elements.id.value = form.elements.name.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    }
+  });
+  form.elements.accent.addEventListener('input', () => {
+    const hex = $('#accent-hex');
+    if (hex) hex.textContent = form.elements.accent.value;
+  });
   const updateFields = () => {
     const github = source.value === 'github_release';
     $$('[data-github]', form).forEach(el => {el.hidden = !github;});
@@ -295,8 +306,8 @@ function addApp() {
     form.elements.asset_pattern.required = github;
     const type = github ? install.value : 'package';
     const field = $('#install-field');
-    $('span', field).textContent = {appimage:'Binary filename', tarball:'Binary path inside archive', pacman_pkg:'Installed package name', package:'Package name'}[type];
-    form.elements.target.placeholder = {appimage:'my-app.AppImage', tarball:'my-app/bin/my-app', pacman_pkg:'my-app', package:'my-app'}[type];
+    $('span', field).textContent = {appimage:'Binary filename', tarball:'Binary path inside archive', zip:'Executable path inside zip', pacman_pkg:'Installed package name', msi:'Installed product name', package:'Package name'}[type];
+    form.elements.target.placeholder = {appimage:'my-app.AppImage', tarball:'my-app/bin/my-app', zip:'my-app.exe', pacman_pkg:'my-app', msi:'My App', package:'my-app'}[type];
   };
   source.onchange = updateFields;
   install.onchange = updateFields;
@@ -306,8 +317,8 @@ function addApp() {
     event.preventDefault();
     const f = Object.fromEntries(new FormData(form));
     const github = f.source_type === 'github_release';
-    const ins = {type:github ? f.install_type : f.source_type === 'aur' ? 'aur' : 'pacman', launch:f.launch};
-    ins[ins.type === 'appimage' ? 'binary_name' : ins.type === 'tarball' ? 'bin' : 'package'] = f.target;
+    const ins = {type:github ? f.install_type : f.source_type === 'aur' ? 'aur' : f.source_type === 'winget' ? 'winget' : 'pacman', launch:f.launch};
+    ins[ins.type === 'appimage' ? 'binary_name' : (ins.type === 'tarball' || ins.type === 'zip') ? 'bin' : 'package'] = f.target;
     const src = github ? {type:f.source_type, repo:f.repo, asset_pattern:f.asset_pattern, prerelease:!!f.prerelease} : {type:f.source_type, package:f.target};
     const app = {id:f.id, name:f.name, publisher:f.publisher, category:f.category, tagline:f.tagline, accent:f.accent, website:f.website, source:src, install:ins, hidden:false};
     const submit = $('button[type=submit]', form);
