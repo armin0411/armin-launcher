@@ -612,12 +612,7 @@
         "text": "Export to Linux, Windows, macOS, Android, iOS, and WebAssembly from one project."
       }
     ],
-    "shots": [
-      {
-        "caption": "Godot 3D & 2D editor",
-        "url": "https://godotengine.org/assets/home/hero-image.webp"
-      }
-    ]
+    "shots": []
   },
   "blender": {
     "about": "The free and open-source 3D creation suite supporting modeling, sculpting, rigging, animation, simulation, rendering, compositing, and video editing.",
@@ -641,8 +636,8 @@
     ],
     "shots": [
       {
-        "caption": "Blender 3D viewport",
-        "url": "https://www.blender.org/wp-content/uploads/2023/11/blender_40_splash_by_artist_studio.jpg"
+        "caption": "Blender splash & 3D suite",
+        "url": "https://raw.githubusercontent.com/blender/blender/main/release/datafiles/splash.png"
       }
     ]
   },

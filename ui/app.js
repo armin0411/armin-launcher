@@ -229,6 +229,10 @@ function details(a) {
     </div>`;
 
   showModal(a.name, html, true);
+  $$('#modal-body .details-shot img').forEach(img => {
+    img.onerror = () => { img.closest('.details-shot')?.remove(); };
+    img.onclick = () => openLightbox(img.src, img.alt || a.name);
+  });
   if (prevApp) $('#details-prev').onclick = () => details(prevApp);
   if (nextApp) $('#details-next').onclick = () => details(nextApp);
   const actBtn = $('#modal-body button[data-action]');
@@ -393,6 +397,35 @@ $('#add-profile').onclick = manageProfiles;
 renderProfiles();
 $('#modal-close').onclick = () => $('#modal').close();
 $('#modal').addEventListener('click', event => {if (event.target === $('#modal')) {const r = $('#modal').getBoundingClientRect(); if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) $('#modal').close();}});
+let lbZoom = 1;
+function applyLightboxZoom(value) {
+  lbZoom = Math.round(Math.max(0.5, Math.min(4, value)) * 100) / 100;
+  const img = $('#lightbox-img');
+  img.style.transform = `scale(${lbZoom})`;
+  img.classList.toggle('zoomed', lbZoom > 1);
+  $('#lb-reset').textContent = Math.round(lbZoom * 100) + '%';
+  $('#lb-out').disabled = lbZoom <= 0.5;
+  $('#lb-in').disabled = lbZoom >= 4;
+}
+function openLightbox(src, caption = '') {
+  $('#lightbox-img').src = src;
+  $('#lightbox-img').alt = caption;
+  $('#lightbox-caption').textContent = caption ? caption.toUpperCase() : 'SCREENSHOT';
+  applyLightboxZoom(1);
+  if (!$('#lightbox').open) $('#lightbox').showModal();
+}
+$('#lb-out').onclick = () => applyLightboxZoom(lbZoom - 0.25);
+$('#lb-in').onclick = () => applyLightboxZoom(lbZoom + 0.25);
+$('#lb-reset').onclick = () => applyLightboxZoom(1);
+$('#lb-close').onclick = () => $('#lightbox').close();
+$('#lightbox-img').onclick = () => applyLightboxZoom(lbZoom > 1 ? 1 : 2);
+$('#lightbox-stage').addEventListener('wheel', event => {
+  event.preventDefault();
+  applyLightboxZoom(lbZoom + (event.deltaY < 0 ? 0.2 : -0.2));
+}, {passive: false});
+$('#lightbox').addEventListener('click', event => {
+  if (event.target === $('#lightbox') || event.target === $('#lightbox-stage')) $('#lightbox').close();
+});
 $('#refresh').onclick = async () => {try {await api('refresh');} catch (e) {setNotice(e.message,true);}};
 $('#update-all').onclick = async () => {try {await api('install');} catch (e) {setNotice(e.message,true);}};
 applyZoom(zoom, false);
