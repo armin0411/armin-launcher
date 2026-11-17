@@ -247,8 +247,15 @@ function closeMenus() {
   $$('.menu-button').forEach(button => button.setAttribute('aria-expanded','false'));
 }
 document.addEventListener('click', event => {if (!event.target.closest('.menu-wrap')) closeMenus();});
+document.addEventListener('mousedown', event => {
+  if ($('#modal').open || document.activeElement !== $('#search')) return;
+  if (!event.target.closest('input, select, textarea, a, #modal')) event.preventDefault();
+});
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape') closeMenus();
+  if (!event.ctrlKey && !event.metaKey && !event.altKey && !$('#modal').open && event.key.length === 1 && !event.target.closest('input, select, textarea, #modal')) {
+    $('#search').focus({preventScroll: true});
+  }
   if (!event.ctrlKey && !event.metaKey) return;
   if (['+', '=', '-', '0'].includes(event.key) || ['Equal','Minus','Digit0','NumpadAdd','NumpadSubtract','Numpad0'].includes(event.code)) {
     event.preventDefault();
@@ -338,3 +345,4 @@ async function connect() {
 }
 window.addEventListener('pagehide', () => events?.close());
 connect();
+if (!$('#modal').open) $('#search').focus({preventScroll: true});
