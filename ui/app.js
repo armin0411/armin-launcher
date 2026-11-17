@@ -76,6 +76,9 @@ function setView(value, persist = true) {
   renderApps();
 }
 function versions(a) {
+  if (a.source.type === 'local') {
+    return `<span class="version mono">${a.installed ? 'local build' : 'not found'}</span>`;
+  }
   return `<span class="version mono">${escapeHTML(a.installed || '—')}<span class="arrow">→</span><span class="latest">${escapeHTML(a.latest || 'not checked')}</span></span>`;
 }
 function statusBadge(a) {
@@ -84,6 +87,7 @@ function statusBadge(a) {
     return `<span class="status-pill is-busy">${escapeHTML(job.status)}</span>`;
   }
   if (job?.status === 'Error') return '<span class="status-pill is-error">ERROR · RETRY</span>';
+  if (a.source.type === 'local' && a.installed) return '<span class="status-pill is-local">LOCAL APP</span>';
   if (a.compatible === false) return '<span class="status-pill is-incompatible">NOT COMPATIBLE</span>';
   if (a.update) return '<span class="status-pill is-update">UPDATE AVAILABLE</span>';
   if (a.installed) return '<span class="status-pill is-installed">INSTALLED</span>';
@@ -105,9 +109,10 @@ function action(a) {
   return `<button class="action ${cls}" data-action="${op}" ${state.refreshing && op !== 'open' ? 'disabled' : ''}>${escapeHTML(label)}</button>`;
 }
 function menu(a) {
-  const repo = a.source.type === 'github_release' ? 'https://github.com/' + a.source.repo : a.source.type === 'aur' ? 'https://aur.archlinux.org/packages/' + encodeURIComponent(a.source.package) : a.source.type === 'winget' ? 'https://winstall.app/apps/' + encodeURIComponent(a.source.package) : 'https://archlinux.org/packages/?q=' + encodeURIComponent(a.source.package);
+  const isLocal = a.source.type === 'local';
+  const repo = isLocal ? a.website : a.source.type === 'github_release' ? 'https://github.com/' + a.source.repo : a.source.type === 'aur' ? 'https://aur.archlinux.org/packages/' + encodeURIComponent(a.source.package) : a.source.type === 'winget' ? 'https://winstall.app/apps/' + encodeURIComponent(a.source.package) : 'https://archlinux.org/packages/?q=' + encodeURIComponent(a.source.package);
   const jobActive = a.job && !terminal.includes(a.job.status) && state.busy;
-  return `<div class="menu-wrap"><button class="menu-button" data-action="menu" aria-label="Menu for ${escapeHTML(a.name)}" aria-expanded="false">···</button><div class="app-menu" hidden><button data-action="details">Details / Release notes</button><a href="${escapeHTML(repo)}" target="_blank" rel="noopener noreferrer">Open Repo ↗</a><button data-action="hide">${a.hidden ? 'Unhide' : 'Hide'} app</button><button data-action="uninstall" class="danger" ${!a.installed || jobActive ? 'disabled' : ''}>Uninstall</button><button data-action="clean-uninstall" class="danger" ${!a.installed || jobActive ? 'disabled' : ''}>Clean uninstall…</button></div></div>`;
+  return `<div class="menu-wrap"><button class="menu-button" data-action="menu" aria-label="Menu for ${escapeHTML(a.name)}" aria-expanded="false">···</button><div class="app-menu" hidden><button data-action="details">Details / Release notes</button><a href="${escapeHTML(repo)}" target="_blank" rel="noopener noreferrer">${isLocal ? 'Website ↗' : 'Open Repo ↗'}</a><button data-action="hide">${a.hidden ? 'Unhide' : 'Hide'} app</button><button data-action="uninstall" class="danger" ${isLocal || !a.installed || jobActive ? 'disabled' : ''}>Uninstall</button><button data-action="clean-uninstall" class="danger" ${isLocal || !a.installed || jobActive ? 'disabled' : ''}>Clean uninstall…</button></div></div>`;
 }
 function formatReleased(a) {
   const raw = a.release?.published_at;
@@ -149,17 +154,21 @@ function renderApps() {
   shownApps = split ? [...installedList, ...uninstalledList] : apps;
   const container = $('#apps');
   container.className = view;
-  const renderCard = a => {
+  const renderCard = (a, idx) => {
     const accent = /^#[0-9a-f]{6}$/i.test(a.accent) ? a.accent : '#2d81ff';
+    const meta = appDetails[a.id] || {};
+    const accent2 = /^#[0-9a-f]{6}$/i.test(meta.accent2 || '') ? meta.accent2 : accent;
+    const fadeA = meta.accent2 ? '11%' : `${6 + (idx % 4)}%`;
+    const fadeB = meta.accent2 ? '7%' : `${2 + (idx % 3)}%`;
     const badge = `<span class="badge">${escapeHTML(a.category)}</span>`;
     const released = formatReleased(a);
     const releasedLine = released ? `<span class="last-updated">Last updated: ${escapeHTML(released)}</span>` : '';
     const tagline = `<p class="tagline">${escapeHTML(a.tagline)}</p>`;
-    const cardState = a.installed ? 'is-installed' : 'is-not-installed';
+    const cardState = [a.installed ? 'is-installed' : 'is-not-installed', meta.accent2 ? 'has-duo-fade' : ''].filter(Boolean).join(' ');
     const content = view === 'list'
       ? `<div class="card-inner">${appIdentity(a, true)}<div class="status-cell">${statusBadge(a)}</div><div class="category-cell">${badge}<span class="publisher">${escapeHTML(released || a.publisher)}</span></div>${versions(a)}<div class="list-action">${action(a)}</div>${menu(a)}</div>`
       : `<div class="card-inner"><div class="app-top">${appIdentity(a, false).replace(/^<div class="app-top">|<\/div>$/g,'')}${menu(a)}</div>${tagline}${releasedLine}<div class="app-meta">${badge}${versions(a)}</div></div><div class="card-bottom">${statusBadge(a)}${action(a)}</div>`;
-    return `<article class="card ${cardState}" data-id="${escapeHTML(a.id)}" style="--app-accent:${accent}">${content}</article>`;
+    return `<article class="card ${cardState}" data-id="${escapeHTML(a.id)}" style="--app-accent:${accent};--app-accent2:${accent2};--fade-a:${fadeA};--fade-b:${fadeB}">${content}</article>`;
   };
   let html = view === 'list' && shownApps.length ? '<div class="table-head" aria-hidden="true"><span>APP</span><span>STATUS</span><span>CATEGORY / RELEASED</span><span>INSTALLED → LATEST</span><span style="text-align:right">ACTION</span><span></span></div>' : '';
   if (split && installedList.length && uninstalledList.length) {
@@ -320,13 +329,14 @@ function addApp() {
   });
   const updateFields = () => {
     const github = source.value === 'github_release';
+    const isLocal = source.value === 'local';
     $$('[data-github]', form).forEach(el => {el.hidden = !github;});
     form.elements.repo.required = github;
     form.elements.asset_pattern.required = github;
-    const type = github ? install.value : 'package';
+    const type = github ? install.value : isLocal ? 'local' : 'package';
     const field = $('#install-field');
-    $('span', field).textContent = {appimage:'Binary filename', tarball:'Binary path inside archive', zip:'Executable path inside zip', pacman_pkg:'Installed package name', msi:'Installed product name', package:'Package name'}[type];
-    form.elements.target.placeholder = {appimage:'my-app.AppImage', tarball:'my-app/bin/my-app', zip:'my-app.exe', pacman_pkg:'my-app', msi:'My App', package:'my-app'}[type];
+    $('span', field).textContent = {appimage:'Binary filename', tarball:'Binary path inside archive', zip:'Executable path inside zip', pacman_pkg:'Installed package name', msi:'Installed product name', local:'Executable or project path', package:'Package name'}[type];
+    form.elements.target.placeholder = {appimage:'my-app.AppImage', tarball:'my-app/bin/my-app', zip:'my-app.exe', pacman_pkg:'my-app', msi:'My App', local:'~/.local/bin/my-app', package:'my-app'}[type];
   };
   source.onchange = updateFields;
   install.onchange = updateFields;
@@ -336,9 +346,10 @@ function addApp() {
     event.preventDefault();
     const f = Object.fromEntries(new FormData(form));
     const github = f.source_type === 'github_release';
-    const ins = {type:github ? f.install_type : f.source_type === 'aur' ? 'aur' : f.source_type === 'winget' ? 'winget' : 'pacman', launch:f.launch};
-    ins[ins.type === 'appimage' ? 'binary_name' : (ins.type === 'tarball' || ins.type === 'zip') ? 'bin' : 'package'] = f.target;
-    const src = github ? {type:f.source_type, repo:f.repo, asset_pattern:f.asset_pattern, prerelease:!!f.prerelease} : {type:f.source_type, package:f.target};
+    const isLocal = f.source_type === 'local';
+    const ins = {type:github ? f.install_type : isLocal ? 'local' : f.source_type === 'aur' ? 'aur' : f.source_type === 'winget' ? 'winget' : 'pacman', launch:f.launch};
+    if (!isLocal) ins[ins.type === 'appimage' ? 'binary_name' : (ins.type === 'tarball' || ins.type === 'zip') ? 'bin' : 'package'] = f.target;
+    const src = github ? {type:f.source_type, repo:f.repo, asset_pattern:f.asset_pattern, prerelease:!!f.prerelease} : isLocal ? {type:'local', path:f.target} : {type:f.source_type, package:f.target};
     const app = {id:f.id, name:f.name, publisher:f.publisher, category:f.category, tagline:f.tagline, accent:f.accent, website:f.website, source:src, install:ins, hidden:false};
     const submit = $('button[type=submit]', form);
     submit.disabled = true;

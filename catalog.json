@@ -554,6 +554,24 @@
         "launch": "rigby2d.AppImage"
       },
       "hidden": false
+    },
+    {
+      "id": "armin-calendar",
+      "name": "ArminCalendar",
+      "publisher": "Local App",
+      "category": "Productivity",
+      "tagline": "Calendar, Markdown journal, tasks and focus",
+      "accent": "#22c55e",
+      "website": "https://github.com/armin0411",
+      "source": {
+        "type": "local",
+        "path": "~/.local/bin/armin-calendar-launch"
+      },
+      "install": {
+        "type": "local",
+        "launch": "armin-calendar-launch"
+      },
+      "hidden": false
     }
   ]
 }

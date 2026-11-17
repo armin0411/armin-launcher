@@ -890,5 +890,29 @@
         "url": "/shots/rigby2d-2.jpg"
       }
     ]
+  },
+  "armin-calendar": {
+    "accent2": "#eab308",
+    "about": "ArminCalendar is a fast, local-first calendar, Markdown journal, task manager, and focus companion built for daily planning.",
+    "features": [
+      {
+        "title": "Calendar & Day View",
+        "text": "Schedule events, track routines, and review upcoming weeks at a glance."
+      },
+      {
+        "title": "Markdown Journal",
+        "text": "Daily notes and reflections stored in clean local Markdown files."
+      },
+      {
+        "title": "Tasks & Focus",
+        "text": "Integrated task lists and focus sessions right alongside your schedule."
+      }
+    ],
+    "shots": [
+      {
+        "caption": "ArminCalendar workspace",
+        "url": "/shots/armin-calendar-1.png"
+      }
+    ]
   }
 }

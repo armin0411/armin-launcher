@@ -102,10 +102,10 @@ def validate_catalog(data):
         src, ins = app.get('source'), app.get('install')
         require(isinstance(src, dict), f'{p}.source must be an object')
         require(isinstance(ins, dict), f'{p}.install must be an object')
-        require(src.get('type') in ('github_release', 'arch_repo', 'aur', 'winget', 'brew', 'apt', 'dnf', 'flatpak'), f'{p}.source.type is unsupported')
-        require(ins.get('type') in ('pacman_pkg', 'appimage', 'tarball', 'pacman', 'aur', 'winget', 'zip', 'msi', 'exe', 'brew', 'dmg', 'apt', 'deb', 'dnf', 'rpm', 'flatpak'), f'{p}.install.type is unsupported')
-        source_fields = {'github_release': {'type', 'repo', 'asset_pattern', 'prerelease'}}.get(src['type'], {'type', 'package'})
-        install_fields = {'type', 'launch', {'appimage': 'binary_name', 'tarball': 'bin', 'zip': 'bin'}.get(ins['type'], 'package')}
+        require(src.get('type') in ('github_release', 'arch_repo', 'aur', 'winget', 'brew', 'apt', 'dnf', 'flatpak', 'local'), f'{p}.source.type is unsupported')
+        require(ins.get('type') in ('pacman_pkg', 'appimage', 'tarball', 'pacman', 'aur', 'winget', 'zip', 'msi', 'exe', 'brew', 'dmg', 'apt', 'deb', 'dnf', 'rpm', 'flatpak', 'local'), f'{p}.install.type is unsupported')
+        source_fields = {'github_release': {'type', 'repo', 'asset_pattern', 'prerelease'}, 'local': {'type', 'path'}}.get(src['type'], {'type', 'package'})
+        install_fields = {'type', 'launch'} if ins['type'] == 'local' else {'type', 'launch', {'appimage': 'binary_name', 'tarball': 'bin', 'zip': 'bin'}.get(ins['type'], 'package')}
         require(set(src) <= source_fields, f'{p}.source has unsupported fields')
         require(set(ins) == install_fields, f'{p}.install has missing or unsupported fields')
         if src['type'] == 'github_release':
@@ -113,6 +113,9 @@ def validate_catalog(data):
             require(isinstance(src.get('asset_pattern'), str) and bool(src['asset_pattern']), f'{p}.source.asset_pattern is required (glob)')
             require(type(src.get('prerelease', False)) is bool, f'{p}.source.prerelease must be boolean')
             require(ins['type'] in ('pacman_pkg', 'appimage', 'tarball', 'zip', 'msi', 'exe', 'dmg', 'deb', 'rpm'), f'{p}: GitHub source requires a file installer')
+        elif src['type'] == 'local':
+            require(isinstance(src.get('path'), str) and bool(src['path'].strip()), f'{p}.source.path is required')
+            require(ins['type'] == 'local', f'{p}: local source requires local installer')
         else:
             require(isinstance(src.get('package'), str) and bool(PKG_RE.fullmatch(src['package'])), f'{p}.source.package is invalid')
             require(ins['type'] == ('pacman' if src['type'] == 'arch_repo' else src['type']), f'{p}: source and installer do not match')
@@ -271,6 +274,12 @@ class Engine:
                 return record['version']
             exe = shlex.split(ins['launch'], posix=not IS_WIN)[0]
             return 'installed' if shutil.which(exe) else None
+        if ins['type'] == 'local':
+            exe = shlex.split(ins['launch'], posix=not IS_WIN)[0]
+            src_path = Path(app['source']['path']).expanduser()
+            if shutil.which(exe) or Path(exe).expanduser().is_file() or src_path.exists():
+                return 'local'
+            return None
         target = (self.home / 'Applications' / ins['binary_name'] if ins['type'] == 'appimage'
                   else self.data / 'apps' / app['id'] / 'current' / ins['bin'])
         if target.is_file():
@@ -284,6 +293,8 @@ class Engine:
 
     def is_compatible(self, app):
         t = app['install']['type']
+        if t == 'local':
+            return bool(self.installed(app))
         if self.platform == 'windows':
             return t in ('winget', 'msi', 'exe', 'zip')
         if self.platform == 'macos':
@@ -451,6 +462,8 @@ class Engine:
                 try:
                     if app['source']['type'] == 'github_release':
                         release = self.github_release(app)
+                    elif app['source']['type'] == 'local':
+                        release = dict(tag='local', notes='Local user-built application.', url=app['website'], checked=time.time())
                     else:
                         src = app['source']
                         version = updates.get((src['type'], src['package']))
