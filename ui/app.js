@@ -30,38 +30,40 @@ function savePref(patch) {
   fetch('/api/prefs', {method: 'POST', headers: {'Content-Type':'application/json', 'X-LaunchCraft-Token': token}, body: JSON.stringify(patch)}).catch(() => {});
 }
 const THEMES = [
-  {id:'default', name:'Default Dark', light:false, bg:'#20232b', canvasEnd:'#1a1d24', surface:'#101217', sunken:'#060607', hover:'#242832', ink:'#f4f4f6', inkSoft:'#b4b7c2', strong:'#ffffff', muted:'#93949d', line:'#383b45', accent:'#2d81ff', green:'#7bd5a7', red:'#ff817e'},
-  {id:'light', name:'Default Light', light:true, bg:'#e7e5e0', canvasEnd:'#dfddd7', surface:'#fbfaf7', sunken:'#e7e6e2', hover:'#f1efe9', ink:'#1e1f24', inkSoft:'#494b54', strong:'#060607', muted:'#62636c', line:'#c4c3bd', accent:'#2d81ff', green:'#167846', red:'#b32327'},
-  {id:'catppuccin', name:'Catppuccin Mocha', light:false, bg:'#362b45', canvasEnd:'#2a2e4a', surface:'#1b1929', sunken:'#12101d', hover:'#3a344d', ink:'#f2e7fc', inkSoft:'#dcd0eb', strong:'#ffffff', muted:'#cbbfd8', line:'#4e4461', accent:'#d8b5ff', green:'#ade4bc', red:'#f7b1c2'},
-  {id:'nord', name:'Nord', light:false, bg:'#333a47', canvasEnd:'#2b323f', surface:'#1c212a', sunken:'#141820', hover:'#3d4555', ink:'#eceff4', inkSoft:'#d8dee9', strong:'#ffffff', muted:'#aeb8cc', line:'#475164', accent:'#88c0d0', green:'#a3be8c', red:'#bf616a'},
-  {id:'gruvbox', name:'Gruvbox', light:false, bg:'#332f28', canvasEnd:'#2c2822', surface:'#1b1814', sunken:'#13110e', hover:'#3d362b', ink:'#faebca', inkSoft:'#e6d2a9', strong:'#fff6e0', muted:'#cabb9c', line:'#594d3b', accent:'#f3bb61', green:'#b9ca79', red:'#ffa492'},
-  {id:'tokyo-night', name:'Tokyo Night', light:false, bg:'#1f344c', canvasEnd:'#2f2545', surface:'#131929', sunken:'#0d111d', hover:'#28324b', ink:'#e8edff', inkSoft:'#cad5f2', strong:'#ffffff', muted:'#b8c5e3', line:'#3b4b68', accent:'#a7c5ff', green:'#a7d598', red:'#ffafb9'},
-  {id:'dracula', name:'Dracula', light:false, bg:'#37263d', canvasEnd:'#26263b', surface:'#1b1523', sunken:'#130f19', hover:'#3b2e44', ink:'#fff0fa', inkSoft:'#ebd6e6', strong:'#ffffff', muted:'#cfbcd2', line:'#563d56', accent:'#e9a1f2', green:'#8ee6ae', red:'#ffa0aa'},
-  {id:'miasma', name:'Miasma', light:false, bg:'#373323', canvasEnd:'#27352c', surface:'#1a1f17', sunken:'#121610', hover:'#383e2f', ink:'#f2edd1', inkSoft:'#d9cba5', strong:'#fffbe6', muted:'#cccdb9', line:'#4d543e', accent:'#c8d282', green:'#b6d4ab', red:'#f4bfb2'},
-  {id:'vscode-dark', name:'VS Code Dark', light:false, bg:'#1f2835', canvasEnd:'#1c2430', surface:'#101721', sunken:'#0a1018', hover:'#243242', ink:'#edf4fb', inkSoft:'#c4d4e2', strong:'#ffffff', muted:'#b5c6d5', line:'#39495c', accent:'#8acbff', green:'#91d4a8', red:'#ffb0a4'},
-  {id:'solarized-dark', name:'Solarized Dark', light:false, bg:'#0b3c46', canvasEnd:'#09363f', surface:'#042228', sunken:'#02191e', hover:'#10424b', ink:'#f4eed8', inkSoft:'#d8d3bf', strong:'#fdf8e6', muted:'#a3b8b6', line:'#26575e', accent:'#2aa198', green:'#859900', red:'#dc322f'},
-  {id:'catppuccin-latte', name:'Catppuccin Latte', light:true, bg:'#ece2e8', canvasEnd:'#dfdcf0', surface:'#fbf9fe', sunken:'#e4dceb', hover:'#f1ebf8', ink:'#40334f', inkSoft:'#554564', strong:'#251b30', muted:'#63546f', line:'#cfc5da', accent:'#773999', green:'#336444', red:'#9a374d'},
-  {id:'nord-light', name:'Nord Light', light:true, bg:'#e4edf2', canvasEnd:'#d6e2eb', surface:'#f8fbfd', sunken:'#dde7ee', hover:'#edf4f9', ink:'#22384b', inkSoft:'#354f63', strong:'#112230', muted:'#4a6171', line:'#bcced9', accent:'#176479', green:'#406745', red:'#a43648'},
-  {id:'gruvbox-light', name:'Gruvbox Light', light:true, bg:'#eee0be', canvasEnd:'#e6d6b0', surface:'#fcf6e6', sunken:'#e5d5ae', hover:'#f4ebd2', ink:'#413321', inkSoft:'#57442e', strong:'#261d12', muted:'#69563d', line:'#d2c19c', accent:'#8a471c', green:'#4e601c', red:'#a13224'},
-  {id:'tokyo-day', name:'Tokyo Day', light:true, bg:'#dde9f5', canvasEnd:'#e2dcf2', surface:'#f8fafe', sunken:'#dce3f2', hover:'#ecf1fc', ink:'#293956', inkSoft:'#435271', strong:'#141e33', muted:'#515e75', line:'#c0cae0', accent:'#3b54a6', green:'#366744', red:'#a13853'},
-  {id:'vscode-light', name:'VS Code Light', light:true, bg:'#e5ebf3', canvasEnd:'#dfe6f0', surface:'#fbfcfe', sunken:'#dde4ee', hover:'#eef3fa', ink:'#1d3048', inkSoft:'#364c65', strong:'#0d1929', muted:'#4e6277', line:'#c4d0e0', accent:'#075da7', green:'#266637', red:'#b32f35'},
-  {id:'miasma-light', name:'Miasma Light', light:true, bg:'#eae4cc', canvasEnd:'#dce4d0', surface:'#fafaf0', sunken:'#dde0cb', hover:'#f0f1e0', ink:'#353a25', inkSoft:'#4e543a', strong:'#1f2314', muted:'#575d45', line:'#c3caae', accent:'#4c6121', green:'#356449', red:'#973e34'},
+  {id:'default', name:'Default Dark', light:false, bg:'#262a34', canvasEnd:'#1e222b', surface:'#0f1116', sunken:'#060607', hover:'#232833', ink:'#f4f4f6', inkSoft:'#b4b7c2', strong:'#ffffff', muted:'#93949d', line:'#3e424e', accent:'#2d81ff', green:'#7bd5a7', red:'#ff817e'},
+  {id:'light', name:'Default Light', light:true, bg:'#dbd8d1', canvasEnd:'#d1cec6', surface:'#fdfcfa', sunken:'#e7e6e2', hover:'#f2f0ea', ink:'#1e1f24', inkSoft:'#494b54', strong:'#060607', muted:'#62636c', line:'#b8b6af', accent:'#2d81ff', green:'#167846', red:'#b32327'},
+  {id:'catppuccin', name:'Catppuccin Mocha', light:false, bg:'#3b304c', canvasEnd:'#2f3352', surface:'#171524', sunken:'#100e1a', hover:'#38324c', ink:'#f2e7fc', inkSoft:'#dcd0eb', strong:'#ffffff', muted:'#cbbfd8', line:'#544968', accent:'#d8b5ff', green:'#ade4bc', red:'#f7b1c2'},
+  {id:'nord', name:'Nord', light:false, bg:'#394150', canvasEnd:'#303846', surface:'#181d26', sunken:'#11151c', hover:'#3b4455', ink:'#eceff4', inkSoft:'#d8dee9', strong:'#ffffff', muted:'#aeb8cc', line:'#4e586d', accent:'#88c0d0', green:'#a3be8c', red:'#bf616a'},
+  {id:'gruvbox', name:'Gruvbox', light:false, bg:'#39342c', canvasEnd:'#312c25', surface:'#171410', sunken:'#100e0b', hover:'#3b3429', ink:'#faebca', inkSoft:'#e6d2a9', strong:'#fff6e0', muted:'#cabb9c', line:'#605340', accent:'#f3bb61', green:'#b9ca79', red:'#ffa492'},
+  {id:'tokyo-night', name:'Tokyo Night', light:false, bg:'#243a54', canvasEnd:'#342a4c', surface:'#101524', sunken:'#0b0f1a', hover:'#26314a', ink:'#e8edff', inkSoft:'#cad5f2', strong:'#ffffff', muted:'#b8c5e3', line:'#415272', accent:'#a7c5ff', green:'#a7d598', red:'#ffafb9'},
+  {id:'dracula', name:'Dracula', light:false, bg:'#3d2b44', canvasEnd:'#2b2b42', surface:'#17121f', sunken:'#100c16', hover:'#3a2d43', ink:'#fff0fa', inkSoft:'#ebd6e6', strong:'#ffffff', muted:'#cfbcd2', line:'#5c425c', accent:'#e9a1f2', green:'#8ee6ae', red:'#ffa0aa'},
+  {id:'miasma', name:'Miasma', light:false, bg:'#3d3827', canvasEnd:'#2c3b31', surface:'#161b13', sunken:'#0f130d', hover:'#363c2d', ink:'#f2edd1', inkSoft:'#d9cba5', strong:'#fffbe6', muted:'#cccdb9', line:'#545c44', accent:'#c8d282', green:'#b6d4ab', red:'#f4bfb2'},
+  {id:'vscode-dark', name:'VS Code Dark', light:false, bg:'#242e3d', canvasEnd:'#202937', surface:'#0d131c', sunken:'#080c13', hover:'#223040', ink:'#edf4fb', inkSoft:'#c4d4e2', strong:'#ffffff', muted:'#b5c6d5', line:'#3f5065', accent:'#8acbff', green:'#91d4a8', red:'#ffb0a4'},
+  {id:'solarized-dark', name:'Solarized Dark', light:false, bg:'#0f444f', canvasEnd:'#0c3d47', surface:'#031c22', sunken:'#021419', hover:'#0f4049', ink:'#f4eed8', inkSoft:'#d8d3bf', strong:'#fdf8e6', muted:'#a3b8b6', line:'#2a6068', accent:'#2aa198', green:'#859900', red:'#dc322f'},
+  {id:'catppuccin-latte', name:'Catppuccin Latte', light:true, bg:'#e1d4de', canvasEnd:'#d3cfe8', surface:'#fcfafe', sunken:'#e4dceb', hover:'#f1ebf8', ink:'#40334f', inkSoft:'#554564', strong:'#251b30', muted:'#63546f', line:'#c4b8d1', accent:'#773999', green:'#336444', red:'#9a374d'},
+  {id:'nord-light', name:'Nord Light', light:true, bg:'#d7e3eb', canvasEnd:'#c8d7e3', surface:'#fafcfe', sunken:'#dde7ee', hover:'#edf4f9', ink:'#22384b', inkSoft:'#354f63', strong:'#112230', muted:'#4a6171', line:'#afc3d0', accent:'#176479', green:'#406745', red:'#a43648'},
+  {id:'gruvbox-light', name:'Gruvbox Light', light:true, bg:'#e3d2ab', canvasEnd:'#dac69b', surface:'#fef9ed', sunken:'#e5d5ae', hover:'#f4ebd2', ink:'#413321', inkSoft:'#57442e', strong:'#261d12', muted:'#69563d', line:'#c5b28b', accent:'#8a471c', green:'#4e601c', red:'#a13224'},
+  {id:'tokyo-day', name:'Tokyo Day', light:true, bg:'#d0dfef', canvasEnd:'#d5ceeb', surface:'#fafbfe', sunken:'#dce3f2', hover:'#ecf1fc', ink:'#293956', inkSoft:'#435271', strong:'#141e33', muted:'#515e75', line:'#b3bfd8', accent:'#3b54a6', green:'#366744', red:'#a13853'},
+  {id:'vscode-light', name:'VS Code Light', light:true, bg:'#d9e1ec', canvasEnd:'#d1dbe8', surface:'#fcfdff', sunken:'#dde4ee', hover:'#eef3fa', ink:'#1d3048', inkSoft:'#364c65', strong:'#0d1929', muted:'#4e6277', line:'#b7c5d8', accent:'#075da7', green:'#266637', red:'#b32f35'},
+  {id:'miasma-light', name:'Miasma Light', light:true, bg:'#ded7bc', canvasEnd:'#cfd9c1', surface:'#fcfcf4', sunken:'#dde0cb', hover:'#f0f1e0', ink:'#353a25', inkSoft:'#4e543a', strong:'#1f2314', muted:'#575d45', line:'#b6bea0', accent:'#4c6121', green:'#356449', red:'#973e34'},
 ];
-let currentTheme = localStorage.getItem('launchcraft-theme') || 'default';
-if (!THEMES.some(t => t.id === currentTheme)) currentTheme = currentTheme === 'dark' ? 'default' : 'default';
+let currentTheme = localStorage.getItem('launchcraft-theme') || 'catppuccin';
+if (!THEMES.some(t => t.id === currentTheme)) currentTheme = 'catppuccin';
 
 function applyTheme(id, animate = true, persist = true) {
-  const t = THEMES.find(x => x.id === id) || THEMES[0];
-  const prevBg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#1a1c22';
+  const t = THEMES.find(x => x.id === id) || THEMES.find(x => x.id === 'catppuccin') || THEMES[0];
+  const prevBg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#3b304c';
   const prevEnd = getComputedStyle(document.documentElement).getPropertyValue('--canvas-end').trim() || prevBg;
   if (animate && currentTheme !== t.id && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
     let wipe = $('#theme-wipe');
     if (!wipe) {
       wipe = document.createElement('div');
       wipe.id = 'theme-wipe';
+      wipe.innerHTML = '<div class="wipe-half wipe-left"></div><div class="wipe-half wipe-right"></div>';
       document.body.appendChild(wipe);
     }
-    wipe.style.background = `linear-gradient(135deg, ${prevBg}, ${prevEnd})`;
+    const bg = `linear-gradient(135deg, ${prevBg}, ${prevEnd})`;
+    wipe.querySelectorAll('.wipe-half').forEach(el => { el.style.background = bg; });
     wipe.classList.remove('active');
     void wipe.offsetWidth;
     wipe.classList.add('active');
@@ -92,45 +94,53 @@ function applyTheme(id, animate = true, persist = true) {
 
 function openThemePicker() {
   const saved = currentTheme;
-  let idx = Math.max(0, THEMES.findIndex(t => t.id === currentTheme));
-  const listHTML = THEMES.map((t, i) => `
+  const lightThemes = THEMES.filter(t => t.light);
+  const darkThemes = THEMES.filter(t => !t.light);
+  const ordered = [...lightThemes, ...darkThemes];
+  let idx = Math.max(0, ordered.findIndex(t => t.id === currentTheme));
+  const renderOption = (t, i) => `
     <button type="button" class="theme-option ${i === idx ? 'selected' : ''}" data-idx="${i}" data-theme-id="${t.id}">
       <span class="theme-swatches" aria-hidden="true">
         <i style="background:${t.bg}"></i><i style="background:${t.surface}"></i><i style="background:${t.ink}"></i><i style="background:${t.accent}"></i>
       </span>
       <span class="theme-name">${escapeHTML(t.name)}</span>
       <span class="badge">${t.light ? 'LIGHT' : 'DARK'}</span>
-    </button>`).join('');
-  showModal('Choose theme', `<p class="muted" style="margin:0 0 12px">Hover or use arrow keys to preview. Press Enter or click to apply.</p><div class="theme-list" id="theme-list">${listHTML}</div>`);
+    </button>`;
+  const lightHTML = lightThemes.map((t, i) => renderOption(t, i)).join('');
+  const darkHTML = darkThemes.map((t, i) => renderOption(t, lightThemes.length + i)).join('');
+  showModal('Choose theme', `<p class="muted" style="margin:0 0 12px">Use arrow keys to preview and Enter to save, or click a theme to apply.</p><div class="theme-list" id="theme-list"><div class="theme-col">${lightHTML}</div><div class="theme-col">${darkHTML}</div></div>`);
   const list = $('#theme-list');
+  const buttons = $$('.theme-option', list);
   let committed = false;
   const selectIdx = (nextIdx, animate = true) => {
-    idx = (nextIdx + THEMES.length) % THEMES.length;
-    $$('.theme-option', list).forEach((b, i) => b.classList.toggle('selected', i === idx));
-    const btn = list.children[idx];
-    btn?.scrollIntoView({block: 'nearest'});
-    applyTheme(THEMES[idx].id, animate, false);
+    idx = (nextIdx + ordered.length) % ordered.length;
+    buttons.forEach((b, i) => b.classList.toggle('selected', i === idx));
+    buttons[idx]?.scrollIntoView({block: 'nearest'});
+    applyTheme(ordered[idx].id, animate, false);
   };
-  list.addEventListener('mouseover', event => {
-    const btn = event.target.closest('.theme-option');
-    if (!btn) return;
-    const i = Number(btn.dataset.idx);
-    if (i !== idx) selectIdx(i, false);
-  });
+  buttons[idx]?.scrollIntoView({block: 'nearest'});
   list.addEventListener('click', event => {
     const btn = event.target.closest('.theme-option');
     if (!btn) return;
     committed = true;
-    applyTheme(THEMES[Number(btn.dataset.idx)].id, true, true);
+    applyTheme(ordered[Number(btn.dataset.idx)].id, true, true);
     $('#modal').close();
   });
   const onKey = event => {
     if (!$('#modal').open || !$('#theme-list')) return;
-    if (event.key === 'ArrowDown') { event.preventDefault(); selectIdx(idx + 1, false); }
-    else if (event.key === 'ArrowUp') { event.preventDefault(); selectIdx(idx - 1, false); }
-    else if (event.key === 'Home') { event.preventDefault(); selectIdx(0, false); }
-    else if (event.key === 'End') { event.preventDefault(); selectIdx(THEMES.length - 1, false); }
-    else if (event.key === 'Enter') { event.preventDefault(); committed = true; applyTheme(THEMES[idx].id, true, true); $('#modal').close(); }
+    if (event.key === 'ArrowDown') { event.preventDefault(); selectIdx(idx + 1, true); }
+    else if (event.key === 'ArrowUp') { event.preventDefault(); selectIdx(idx - 1, true); }
+    else if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      if (idx < lightThemes.length) selectIdx(Math.min(lightThemes.length + idx, ordered.length - 1), true);
+      else selectIdx(Math.min(idx - lightThemes.length, lightThemes.length - 1), true);
+    } else if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      if (idx >= lightThemes.length) selectIdx(Math.min(idx - lightThemes.length, lightThemes.length - 1), true);
+      else selectIdx(Math.min(lightThemes.length + idx, ordered.length - 1), true);
+    } else if (event.key === 'Home') { event.preventDefault(); selectIdx(0, true); }
+    else if (event.key === 'End') { event.preventDefault(); selectIdx(ordered.length - 1, true); }
+    else if (event.key === 'Enter') { event.preventDefault(); committed = true; applyTheme(ordered[idx].id, true, true); $('#modal').close(); }
   };
   document.addEventListener('keydown', onKey);
   $('#modal').addEventListener('close', () => {
@@ -156,16 +166,45 @@ function applyState(next) {
   }
   render();
 }
+const pendingOps = new Map();
 function setNotice(message, error = false) {
   $('#notice-text').textContent = message;
   $('#notice').classList.toggle('error', error);
 }
-async function api(path, data = {}) {
-  const response = await fetch('/api/' + path, {method: 'POST', headers: {'Content-Type':'application/json', 'X-LaunchCraft-Token': token}, body: JSON.stringify(data)});
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error || 'Request failed');
-  applyState(result);
-  return result;
+async function api(path, data = {}, {timeoutMs = 5000} = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch('/api/' + path, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json', 'X-LaunchCraft-Token': token},
+      body: JSON.stringify(data),
+      signal: controller.signal,
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Request failed');
+    applyState(result);
+    return result;
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      throw new Error(`Request timed out after ${Math.round(timeoutMs / 1000)}s — server did not respond in time.`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+async function runAppOp(id, op, fn) {
+  pendingOps.set(id, op);
+  render();
+  try {
+    return await fn();
+  } catch (error) {
+    setNotice(error.message, true);
+  } finally {
+    pendingOps.delete(id);
+    render();
+  }
 }
 function applyZoom(value, persist = true) {
   zoom = Math.round(Math.max(.75, Math.min(1.75, value)) * 100) / 100;
@@ -191,6 +230,10 @@ function versions(a) {
   return `<span class="version mono">${escapeHTML(a.installed || '—')}<span class="arrow">→</span><span class="latest">${escapeHTML(a.latest || 'not checked')}</span></span>`;
 }
 function statusBadge(a) {
+  const pending = pendingOps.get(a.id);
+  if (pending === 'cancel') return '<span class="status-pill is-busy">Cancelling…</span>';
+  if (pending === 'install') return `<span class="status-pill is-busy">${a.update ? 'Updating…' : 'Starting…'}</span>`;
+  if (pending === 'uninstall') return '<span class="status-pill is-busy">Uninstalling…</span>';
   const job = a.job;
   if (job && !terminal.includes(job.status) && state.busy) {
     return `<span class="status-pill is-busy">${escapeHTML(job.status)}</span>`;
@@ -204,7 +247,21 @@ function statusBadge(a) {
   return '<span class="status-pill is-available">AVAILABLE TO INSTALL</span>';
 }
 function action(a) {
+  const pending = pendingOps.get(a.id);
   const job = a.job;
+  if (pending === 'cancel') {
+    return `<div class="progress-group"><div class="progress-info"><div class="progress-text"><span>Cancelling…</span><span></span></div><div class="progress-track" role="progressbar" aria-label="Cancelling" aria-valuemin="0" aria-valuemax="100"><div class="progress-fill indeterminate"></div></div></div><button class="cancel" data-action="cancel" disabled>Cancelling…</button></div>`;
+  }
+  if (pending === 'install') {
+    const label = a.update ? 'Starting update…' : 'Starting…';
+    return `<div class="progress-group"><div class="progress-info"><div class="progress-text"><span>${label}</span><span></span></div><div class="progress-track" role="progressbar" aria-label="${label}" aria-valuemin="0" aria-valuemax="100"><div class="progress-fill indeterminate"></div></div></div><button class="cancel" data-action="cancel" disabled>Cancel</button></div>`;
+  }
+  if (pending === 'open') {
+    return '<button class="action is-open" data-action="open" disabled>OPENING…</button>';
+  }
+  if (pending === 'uninstall') {
+    return '<button class="action" disabled>UNINSTALLING…</button>';
+  }
   if (job && !terminal.includes(job.status) && state.busy) {
     const percent = typeof job.percent === 'number' ? Math.max(0, Math.min(100, job.percent)) : null;
     return `<div class="progress-group"><div class="progress-info"><div class="progress-text"><span>${escapeHTML(job.status)}</span><span>${percent === null ? '' : Math.round(percent) + '%'}</span></div><div class="progress-track" role="progressbar" aria-label="${escapeHTML(job.status)}" ${percent === null ? '' : 'aria-valuenow="' + percent + '"'} aria-valuemin="0" aria-valuemax="100"><div class="progress-fill ${percent === null ? 'indeterminate' : ''}" ${percent === null ? '' : 'style="width:' + percent + '%"'}></div></div></div><button class="cancel" data-action="cancel" title="Cancel pending work; active package transactions finish safely">Cancel</button></div>`;
@@ -390,11 +447,25 @@ function details(a) {
   if (actBtn) {
     actBtn.onclick = async () => {
       const op = actBtn.dataset.action;
-      try {
-        if (op === 'install') { await api('install', {ids:[a.id]}); $('#modal').close(); }
-        else if (op === 'open') { await api('open', {id:a.id}); }
-        else if (op === 'cancel') { await api('cancel'); }
-      } catch (error) { setNotice(error.message, true); }
+      if (op === 'install') {
+        actBtn.disabled = true;
+        actBtn.textContent = a.update ? 'UPDATING…' : 'STARTING…';
+        await runAppOp(a.id, 'install', async () => {
+          await api('install', {ids:[a.id]});
+          if ($('#modal').open) $('#modal').close();
+        });
+        if ($('#modal').open) details(state.apps.find(x => x.id === a.id) || a);
+      } else if (op === 'open') {
+        actBtn.disabled = true;
+        actBtn.textContent = 'OPENING…';
+        await runAppOp(a.id, 'open', () => api('open', {id:a.id}));
+        if ($('#modal').open) details(state.apps.find(x => x.id === a.id) || a);
+      } else if (op === 'cancel') {
+        actBtn.disabled = true;
+        actBtn.textContent = 'Cancelling…';
+        await runAppOp(a.id, 'cancel', () => api('cancel'));
+        if ($('#modal').open) details(state.apps.find(x => x.id === a.id) || a);
+      }
     };
   }
 }
@@ -403,7 +474,7 @@ function confirmUninstall(a) {
   $('#uninstall-cancel').onclick = () => $('#modal').close();
   $('#uninstall-confirm').onclick = async () => {
     $('#modal').close();
-    try { await api('uninstall', {id:a.id}); } catch (error) { setNotice(error.message, true); }
+    await runAppOp(a.id, 'uninstall', () => api('uninstall', {id:a.id}));
   };
 }
 function confirmCleanUninstall(a) {
@@ -422,7 +493,7 @@ function confirmCleanUninstall(a) {
       return;
     }
     $('#modal').close();
-    try { await api('uninstall', {id:a.id, clean:true}); } catch (error) { setNotice(error.message, true); }
+    await runAppOp(a.id, 'uninstall', () => api('uninstall', {id:a.id, clean:true}));
   };
 }
 function addApp() {
@@ -498,12 +569,26 @@ $('#apps').addEventListener('click', async event => {
   if (op === 'details') return details(a);
   if (op === 'uninstall') return confirmUninstall(a);
   if (op === 'clean-uninstall') return confirmCleanUninstall(a);
-  try {
-    if (op === 'hide') await api('catalog', {op:'hide', id:a.id, hidden:!a.hidden});
-    else if (op === 'install') await api('install', {ids:[a.id]});
-    else if (op === 'cancel') await api('cancel');
-    else if (op === 'open') await api('open', {id:a.id});
-  } catch (error) { setNotice(error.message, true); }
+  if (op === 'hide') {
+    const prevHidden = a.hidden;
+    a.hidden = !prevHidden;
+    render();
+    try {
+      await api('catalog', {op:'hide', id:a.id, hidden:a.hidden});
+    } catch (error) {
+      a.hidden = prevHidden;
+      render();
+      setNotice(error.message, true);
+    }
+    return;
+  }
+  if (op === 'install' || op === 'cancel' || op === 'open') {
+    await runAppOp(a.id, op, () =>
+      op === 'install' ? api('install', {ids:[a.id]})
+      : op === 'cancel' ? api('cancel')
+      : api('open', {id:a.id})
+    );
+  }
 });
 function closeMenus() {
   $$('.app-menu').forEach(menu => {menu.hidden = true;});
@@ -608,18 +693,51 @@ $('#lightbox-stage').addEventListener('wheel', event => {
 $('#lightbox').addEventListener('click', event => {
   if (event.target === $('#lightbox') || event.target === $('#lightbox-stage')) $('#lightbox').close();
 });
-$('#refresh').onclick = async () => {try {await api('refresh');} catch (e) {setNotice(e.message,true);}};
+$('#refresh').onclick = async () => {
+  const btn = $('#refresh');
+  const prevText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '↻ Refreshing…';
+  try {
+    await api('refresh');
+  } catch (e) {
+    setNotice(e.message, true);
+  } finally {
+    if (!state.refreshing) {
+      btn.disabled = false;
+      btn.textContent = prevText;
+    }
+  }
+};
 function openAiMaintain() {
-  const keyStatus = state.ai_configured ? 'API key configured locally (enter a new one below to replace it).' : 'No OpenAI API key configured yet.';
-  showModal('AI Maintain (Hybrid)', `<p class="muted" style="margin:0 0 14px">Python gathers live GitHub/AUR release facts and checks local icons/screenshots, then ChatGPT proposes validated updates.</p><form id="ai-form" class="form-grid"><label class="full">OpenAI API Key <span class="field-hint">(${escapeHTML(keyStatus)})</span><input name="api_key" type="password" placeholder="${state.ai_configured ? '•••••••• (saved locally)' : 'sk-...'}"></label><label>App to add or check <span class="field-hint">(optional)</span><input name="prompt" placeholder="Leave blank for full catalog audit, or e.g. Zed"></label><label>Model<select name="model"><option value="gpt-4o-mini">gpt-4o-mini (fast &amp; cheap)</option><option value="gpt-4o">gpt-4o</option><option value="o4-mini">o4-mini</option></select></label><label class="checkbox full"><input name="push" type="checkbox"> Run unit tests &amp; push changes to GitHub if updated</label><div class="modal-actions full"><button type="button" id="ai-cancel">Close</button><button type="submit" class="primary">Run AI Maintain</button></div></form><pre id="ai-log" class="release-notes" style="margin-top:14px">${escapeHTML(state.ai_report || 'Ready.')}</pre>`);
+  const defaults = {
+    openai: {model: 'gpt-4o-mini', placeholder: 'sk-...'},
+    anthropic: {model: 'claude-3-5-haiku-latest', placeholder: 'sk-ant-...'},
+    gemini: {model: 'gemini-2.5-flash', placeholder: 'AIza...'},
+    openrouter: {model: 'openai/gpt-4o-mini', placeholder: 'sk-or-...'},
+    custom: {model: 'llama3.2', placeholder: 'Optional for local (e.g. Ollama)'},
+  };
+  showModal('AI Maintain (Hybrid)', `<p class="muted" style="margin:0 0 14px">Python gathers live GitHub/AUR release facts and checks local icons/screenshots, then your chosen AI proposes validated updates.</p><form id="ai-form" class="form-grid"><label>AI Provider<select name="provider"><option value="openai">OpenAI (ChatGPT)</option><option value="anthropic">Anthropic (Claude)</option><option value="gemini">Google Gemini</option><option value="openrouter">OpenRouter</option><option value="custom">Custom / Local (Ollama, etc.)</option></select></label><label>Model<input name="model" required value="gpt-4o-mini"></label><label class="full" id="ai-base-wrap" hidden>Base URL <span class="field-hint">(e.g. http://localhost:11434/v1)</span><input name="base_url" placeholder="http://localhost:11434/v1"></label><label class="full">API Key <span class="field-hint" id="ai-key-hint"></span><input name="api_key" type="password" placeholder="sk-..."></label><label class="full">App to add or check <span class="field-hint">(optional)</span><input name="prompt" placeholder="Leave blank for full catalog audit, or e.g. Zed"></label><label class="checkbox full"><input name="push" type="checkbox"> Run unit tests &amp; push changes to GitHub if updated</label><div class="modal-actions full"><button type="button" id="ai-cancel">Close</button><button type="submit" class="primary">Run AI Maintain</button></div></form><pre id="ai-log" class="release-notes" style="margin-top:14px">${escapeHTML(state.ai_report || 'Ready.')}</pre>`);
+  const form = $('#ai-form');
+  const syncProvider = () => {
+    const p = form.elements.provider.value;
+    const cfg = defaults[p] || defaults.openai;
+    const saved = !!(state.ai_keys && state.ai_keys[p]);
+    form.elements.model.value = cfg.model;
+    form.elements.api_key.placeholder = saved ? '•••••••• (saved locally)' : cfg.placeholder;
+    $('#ai-key-hint').textContent = saved ? '(saved locally — enter a new one to replace)' : p === 'custom' ? '(optional for local endpoints)' : '(stored locally only)';
+    $('#ai-base-wrap').hidden = p !== 'custom';
+  };
+  form.elements.provider.onchange = syncProvider;
+  syncProvider();
   $('#ai-cancel').onclick = () => $('#modal').close();
-  $('#ai-form').onsubmit = async event => {
+  form.onsubmit = async event => {
     event.preventDefault();
-    const f = Object.fromEntries(new FormData(event.target));
-    const btn = $('button[type=submit]', event.target);
+    const f = Object.fromEntries(new FormData(form));
+    const btn = $('button[type=submit]', form);
     btn.disabled = true;
     try {
-      await api('ai_maintain', {api_key: f.api_key || '', prompt: f.prompt || '', model: f.model, push: !!f.push});
+      await api('ai_maintain', {provider: f.provider, model: f.model, base_url: f.base_url || '', api_key: f.api_key || '', prompt: f.prompt || '', push: !!f.push}, {timeoutMs: 60000});
     } catch (error) {
       $('#ai-log').textContent = 'Error: ' + error.message;
     } finally {
@@ -628,7 +746,25 @@ function openAiMaintain() {
   };
 }
 $('#ai-maintain').onclick = openAiMaintain;
-$('#update-all').onclick = async () => {try {await api('install');} catch (e) {setNotice(e.message,true);}};
+$('#update-all').onclick = async () => {
+  const btn = $('#update-all');
+  const prevText = btn.textContent;
+  const targets = state.apps.filter(a => a.update).map(a => a.id);
+  btn.disabled = true;
+  btn.textContent = 'Starting…';
+  targets.forEach(id => pendingOps.set(id, 'install'));
+  renderApps();
+  try {
+    await api('install');
+  } catch (e) {
+    setNotice(e.message, true);
+  } finally {
+    targets.forEach(id => pendingOps.delete(id));
+    render();
+    if (!state.busy && btn.textContent === 'Starting…') btn.textContent = prevText;
+  }
+};
+applyTheme(currentTheme, false, false);
 applyZoom(zoom, false);
 setView(view, false);
 async function connect() {

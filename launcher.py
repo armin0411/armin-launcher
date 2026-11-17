@@ -333,7 +333,7 @@ class Engine:
                 app['icon'] = self.icon_url(app['id'])
                 app['compatible'] = self.is_compatible(app)
                 app['data_paths'] = [str(p) for p in self.user_data_paths(app)]
-            return dict(apps=apps, busy=self.busy, refreshing=self.refreshing, ai_running=self.ai_running, ai_report=self.ai_report, ai_configured=bool(self.get_openai_key()), notice=self.notice, last_error=self.last_error, warnings=self.warnings, platform=self.platform, prefs=copy.deepcopy(self.state.get('prefs', {})), revision=time.monotonic())
+            return dict(apps=apps, busy=self.busy, refreshing=self.refreshing, ai_running=self.ai_running, ai_report=self.ai_report, ai_configured=bool(self.get_ai_key('openai')), ai_keys={p: bool(self.get_ai_key(p)) for p in ('openai', 'anthropic', 'gemini', 'openrouter', 'custom')}, notice=self.notice, last_error=self.last_error, warnings=self.warnings, platform=self.platform, prefs=copy.deepcopy(self.state.get('prefs', {})), revision=time.monotonic())
 
     def newer(self, latest, installed):
         if installed == 'unknown':
@@ -353,13 +353,71 @@ class Engine:
             return False
         return pa > pb
 
-    def get_openai_key(self):
-        return os.environ.get('OPENAI_API_KEY', '').strip() or self.state.get('secrets', {}).get('openai_api_key', '').strip()
+    def get_ai_key(self, provider='openai'):
+        env_map = {'openai': 'OPENAI_API_KEY', 'anthropic': 'ANTHROPIC_API_KEY', 'gemini': 'GEMINI_API_KEY', 'openrouter': 'OPENROUTER_API_KEY'}
+        env_var = env_map.get(provider, '')
+        if env_var and os.environ.get(env_var, '').strip():
+            return os.environ[env_var].strip()
+        secrets_box = self.state.get('secrets', {})
+        keys = secrets_box.get('ai_keys', {})
+        if isinstance(keys, dict) and keys.get(provider, '').strip():
+            return keys[provider].strip()
+        if provider == 'openai':
+            return secrets_box.get('openai_api_key', '').strip()
+        return ''
 
-    def ai_maintain(self, prompt='', push=False, model='gpt-4o-mini'):
-        key = self.get_openai_key()
-        if not key:
-            raise ValueError('Set an OpenAI API key first')
+    def call_ai_provider(self, provider, key, model, base_url, sys_prompt, user_payload):
+        if provider == 'anthropic':
+            if not key:
+                raise ValueError('Set an Anthropic API key first')
+            body = json.dumps({
+                'model': model or 'claude-3-5-haiku-latest',
+                'max_tokens': 4096,
+                'system': sys_prompt,
+                'messages': [{'role': 'user', 'content': user_payload}],
+            }).encode()
+            req = urllib.request.Request('https://api.anthropic.com/v1/messages', data=body, headers={'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01'}, method='POST')
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                text = json.loads(resp.read())['content'][0]['text']
+        elif provider == 'gemini':
+            if not key:
+                raise ValueError('Set a Gemini API key first')
+            m = urllib.parse.quote(model or 'gemini-2.5-flash', safe='')
+            body = json.dumps({
+                'systemInstruction': {'parts': [{'text': sys_prompt}]},
+                'contents': [{'role': 'user', 'parts': [{'text': user_payload}]}],
+                'generationConfig': {'responseMimeType': 'application/json'},
+            }).encode()
+            req = urllib.request.Request(f'https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={urllib.parse.quote(key, safe="")}', data=body, headers={'Content-Type': 'application/json'}, method='POST')
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                text = json.loads(resp.read())['candidates'][0]['content']['parts'][0]['text']
+        else:
+            endpoint = {'openai': 'https://api.openai.com/v1', 'openrouter': 'https://openrouter.ai/api/v1'}.get(provider, (base_url or '').strip().rstrip('/'))
+            if not endpoint:
+                raise ValueError('Enter a Base URL for custom OpenAI-compatible provider')
+            if provider != 'custom' and not key:
+                raise ValueError(f'Set an API key for {provider} first')
+            headers = {'Content-Type': 'application/json'}
+            if key:
+                headers['Authorization'] = f'Bearer {key}'
+            body = json.dumps({
+                'model': model or 'gpt-4o-mini',
+                'response_format': {'type': 'json_object'},
+                'messages': [
+                    {'role': 'system', 'content': sys_prompt},
+                    {'role': 'user', 'content': user_payload},
+                ],
+            }).encode()
+            req = urllib.request.Request(f'{endpoint}/chat/completions', data=body, headers=headers, method='POST')
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                text = json.loads(resp.read())['choices'][0]['message']['content']
+        cleaned = re.sub(r'^```(?:json)?\s*|\s*```$', '', text.strip(), flags=re.I)
+        return json.loads(cleaned)
+
+    def ai_maintain(self, prompt='', push=False, model='gpt-4o-mini', provider='openai', base_url=''):
+        key = self.get_ai_key(provider)
+        if provider != 'custom' and not key:
+            raise ValueError(f'Set an API key for {provider} first')
         with self.lock:
             if self.busy or self.ai_running:
                 raise ValueError('Another task is running')
@@ -419,10 +477,10 @@ class Engine:
                         pass
 
                 log.append(f'Checked {len(facts)} apps' + (f' + search hits for "{prompt.strip()}"' if prompt.strip() else ''))
-                self.ai_report = '\n'.join(log) + '\nAsking ChatGPT to review catalog & assets…'
+                self.ai_report = '\n'.join(log) + f'\nAsking {provider} ({model or "default"}) to review catalog & assets…'
                 self.emit('state', self.snapshot())
 
-                # 2. Call ChatGPT API
+                # 2. Call selected AI provider
                 sys_prompt = (
                     'You maintain Armin Launcher (catalog.json for Linux x86_64 and catalog.windows.json for Windows). '
                     'Given the live app facts and optional user request, return ONLY valid JSON with keys: '
@@ -430,18 +488,8 @@ class Engine:
                     '"remove_ids": [str], "assets": [{"id": str, "icon_url": str|null, "shot_url": str|null, "shot_caption": str, "about": str, "features": [{"title": str, "text": str}]}]}. '
                     'Only suggest real, verified assets seen in the provided facts or search_hits. Keep lists empty if no changes are needed.'
                 )
-                payload = json.dumps({
-                    'model': model or 'gpt-4o-mini',
-                    'response_format': {'type': 'json_object'},
-                    'messages': [
-                        {'role': 'system', 'content': sys_prompt},
-                        {'role': 'user', 'content': json.dumps({'request': prompt.strip() or 'Audit catalog for better install/update methods, unreleased removals, and missing icons/screenshots.', 'facts': facts, 'search_hits': search_hits})},
-                    ],
-                }).encode()
-                req = urllib.request.Request('https://api.openai.com/v1/chat/completions', data=payload, headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {key}'}, method='POST')
-                with urllib.request.urlopen(req, timeout=60) as resp:
-                    ai_data = json.loads(resp.read())
-                plan = json.loads(ai_data['choices'][0]['message']['content'])
+                user_payload = json.dumps({'request': prompt.strip() or 'Audit catalog for better install/update methods, unreleased removals, and missing icons/screenshots.', 'facts': facts, 'search_hits': search_hits})
+                plan = self.call_ai_provider(provider, key, model, base_url, sys_prompt, user_payload)
                 log.append('AI summary: ' + str(plan.get('summary', 'Done.')))
 
                 # 3. Validate & apply safely
@@ -1365,11 +1413,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if path == '/api/refresh':
                 engine.start('refresh')
             elif path == '/api/ai_maintain':
+                provider = str(data.get('provider', 'openai')).strip().lower()
+                if provider not in ('openai', 'anthropic', 'gemini', 'openrouter', 'custom'):
+                    raise ValueError('Unsupported AI provider')
                 if 'api_key' in data and str(data['api_key']).strip():
                     with engine.lock:
-                        engine.state.setdefault('secrets', {})['openai_api_key'] = str(data['api_key']).strip()
+                        keys = engine.state.setdefault('secrets', {}).setdefault('ai_keys', {})
+                        keys[provider] = str(data['api_key']).strip()
                         engine.save()
-                engine.ai_maintain(prompt=str(data.get('prompt', '')), push=bool(data.get('push', False)), model=str(data.get('model', 'gpt-4o-mini')))
+                engine.ai_maintain(prompt=str(data.get('prompt', '')), push=bool(data.get('push', False)), model=str(data.get('model', '')), provider=provider, base_url=str(data.get('base_url', '')))
                 self.json(200, engine.snapshot())
                 return
             elif path == '/api/install':
