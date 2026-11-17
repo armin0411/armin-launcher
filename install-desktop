@@ -26,5 +26,11 @@ if shutil.which('update-desktop-database'):
     subprocess.run(['update-desktop-database', str(applications)], check=False)
 if shutil.which('gtk-update-icon-cache'):
     subprocess.run(['gtk-update-icon-cache', '-f', '-t', str(home / '.local/share/icons/hicolor')], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+omarchy_hooks = home / '.config/omarchy/hooks/post-update.d'
+if (home / '.config/omarchy').is_dir() or Path('/usr/share/omarchy').is_dir():
+    omarchy_hooks.mkdir(parents=True, exist_ok=True)
+    hook = omarchy_hooks / 'armin-launcher.hook'
+    hook.write_text('#!/bin/sh\nARMIN_LAUNCHER_SUDO=1 exec ' + shlex.quote(str(bin_dir / 'launchcraft-ctl')) + ' update-installed\n')
+    hook.chmod(0o755)
 print(f'Installed {entry}')
-print('Open SUPER+Space and search Armin Launcher.')
+print('Open SUPER+Space (Omarchy) or SUPER (KDE/GNOME) and search Armin Launcher.')

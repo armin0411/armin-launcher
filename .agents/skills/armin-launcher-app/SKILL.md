@@ -10,6 +10,10 @@ description: >-
 
 Repository path: `/home/armin/Projects/armin-launcher` (GitHub: `armin0411/armin-launcher`).
 
+## Required Check on Every Invocation
+
+Every time this skill is summoned, **check whether any apps in the catalog have gained better installation or update methods for each supported system** (Arch/Omarchy, Debian/Ubuntu/Kubuntu, Fedora, Windows 11, macOS — e.g. a newly published GitHub release, native `.pkg.tar.zst` / `.AppImage` / `.deb` / `.rpm` / `.msi` / `.dmg` asset, or official `pacman`/`aur`/`winget`/`brew` package). If any better method is found, update `catalog.json` / `catalog.windows.json`, validate, run the test suite, and push to GitHub.
+
 ## Key Files
 
 - `catalog.json` — Linux x86_64 catalog (version 1 schema, see `AGENTS.md`).

@@ -82,6 +82,7 @@ function statusBadge(a) {
     return `<span class="status-pill is-busy">${escapeHTML(job.status)}</span>`;
   }
   if (job?.status === 'Error') return '<span class="status-pill is-error">ERROR · RETRY</span>';
+  if (a.compatible === false) return '<span class="status-pill is-incompatible">NOT COMPATIBLE</span>';
   if (a.update) return '<span class="status-pill is-update">UPDATE AVAILABLE</span>';
   if (a.installed) return '<span class="status-pill is-installed">INSTALLED</span>';
   if (a.hidden) return '<span class="status-pill is-hidden">HIDDEN</span>';
@@ -92,6 +93,9 @@ function action(a) {
   if (job && !terminal.includes(job.status) && state.busy) {
     const percent = typeof job.percent === 'number' ? Math.max(0, Math.min(100, job.percent)) : null;
     return `<div class="progress-group"><div class="progress-info"><div class="progress-text"><span>${escapeHTML(job.status)}</span><span>${percent === null ? '' : Math.round(percent) + '%'}</span></div><div class="progress-track" role="progressbar" aria-label="${escapeHTML(job.status)}" ${percent === null ? '' : 'aria-valuenow="' + percent + '"'} aria-valuemin="0" aria-valuemax="100"><div class="progress-fill ${percent === null ? 'indeterminate' : ''}" ${percent === null ? '' : 'style="width:' + percent + '%"'}></div></div></div><button class="cancel" data-action="cancel" title="Cancel pending work; active package transactions finish safely">Cancel</button></div>`;
+  }
+  if (a.compatible === false && !a.installed) {
+    return '<button class="action is-incompatible" disabled>INSTALL</button>';
   }
   const op = a.installed && !a.update ? 'open' : 'install';
   const cls = a.update ? 'is-update primary' : a.installed ? 'is-open' : 'is-install';

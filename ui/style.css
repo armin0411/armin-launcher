@@ -79,8 +79,11 @@ a { color: var(--accent); text-underline-offset: 3px; }
 #shell {
   zoom: var(--zoom);
   max-width: 1800px;
+  min-height: 100vh;
   margin: auto;
   padding: 0 28px;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Header */
@@ -398,6 +401,11 @@ main.grid {
   background: rgba(147, 148, 157, 0.10);
   border-color: var(--line);
 }
+.status-pill.is-incompatible {
+  color: var(--muted);
+  background: var(--sunken);
+  border-color: var(--line);
+}
 
 body.light .status-pill.is-available {
   color: #1553b7;
@@ -461,6 +469,13 @@ body.light .status-pill.is-error {
 .action.is-update:hover:not(:disabled) {
   background: #216ee0;
   border-color: #216ee0;
+}
+.action.is-incompatible:disabled {
+  background: var(--sunken);
+  border-color: var(--line);
+  color: var(--muted);
+  opacity: .55;
+  cursor: not-allowed;
 }
 
 body.light .action.is-install {
@@ -541,7 +556,13 @@ main.list { padding-bottom: 24px; }
 .empty-icon { font-size: 36px; }
 #empty h3 { color: var(--ink); font-size: 20px; font-weight: 600; }
 
+main#apps { flex: 1; }
 footer {
+  position: sticky;
+  bottom: 0;
+  background: var(--bg);
+  z-index: 4;
+  margin-top: auto;
   border-top: 1px solid var(--line);
   padding: 11px 0 14px;
   font-size: 10px;

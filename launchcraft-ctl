@@ -25,6 +25,7 @@ def main():
     p.add_argument('id', nargs='?')
     p.add_argument('--refresh', action='store_true')
     p.add_argument('--json', action='store_true')
+    sub.add_parser('update-installed', help='refresh and update installed GitHub/portable apps')
     args = parser.parse_args()
     cat = Catalog(args.catalog)
     try:
@@ -56,6 +57,17 @@ def main():
                         app.update(patch)
             cat.mutate(change)
             print(f'Catalog {args.command} complete')
+        elif args.command == 'update-installed':
+            engine = Engine(args.catalog)
+            engine.refresh()
+            snap = engine.snapshot()
+            ids = [a['id'] for a in snap['apps'] if a['installed'] and a['update'] and not a['hidden'] and a['source']['type'] == 'github_release']
+            if not ids:
+                print('All Armin Launcher GitHub/portable apps are up to date.')
+            else:
+                print('Updating Armin Launcher apps:', ', '.join(ids))
+                engine.install_many(ids)
+                print(engine.notice)
         else:
             engine = Engine(args.catalog)
             if args.refresh:

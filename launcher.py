@@ -36,7 +36,26 @@ except ImportError:
     msvcrt = None
 
 IS_WIN = sys.platform == 'win32'
+IS_MAC = sys.platform == 'darwin'
 ROOT = Path(__file__).resolve().parent
+
+
+def detect_platform():
+    if IS_WIN:
+        return 'windows'
+    if IS_MAC:
+        return 'macos'
+    try:
+        text = Path('/etc/os-release').read_text().lower()
+        if any(x in text for x in ('id=arch', 'id=omarchy', 'id_like=arch', 'id_like="arch')):
+            return 'arch'
+        if any(x in text for x in ('id=ubuntu', 'id=debian', 'id=kubuntu', 'id_like=debian', 'id_like=ubuntu')):
+            return 'debian'
+        if any(x in text for x in ('id=fedora', 'id_like=fedora')):
+            return 'fedora'
+    except OSError:
+        pass
+    return 'linux'
 ID_RE = re.compile(r'^[a-z0-9][a-z0-9._-]*$')
 PKG_RE = re.compile(r'^[a-zA-Z0-9@_+][a-zA-Z0-9@._+-]*$')
 
@@ -83,9 +102,9 @@ def validate_catalog(data):
         src, ins = app.get('source'), app.get('install')
         require(isinstance(src, dict), f'{p}.source must be an object')
         require(isinstance(ins, dict), f'{p}.install must be an object')
-        require(src.get('type') in ('github_release', 'arch_repo', 'aur', 'winget'), f'{p}.source.type is unsupported')
-        require(ins.get('type') in ('pacman_pkg', 'appimage', 'tarball', 'pacman', 'aur', 'winget', 'zip', 'msi', 'exe'), f'{p}.install.type is unsupported')
-        source_fields = {'github_release': {'type', 'repo', 'asset_pattern', 'prerelease'}, 'arch_repo': {'type', 'package'}, 'aur': {'type', 'package'}, 'winget': {'type', 'package'}}[src['type']]
+        require(src.get('type') in ('github_release', 'arch_repo', 'aur', 'winget', 'brew', 'apt', 'dnf', 'flatpak'), f'{p}.source.type is unsupported')
+        require(ins.get('type') in ('pacman_pkg', 'appimage', 'tarball', 'pacman', 'aur', 'winget', 'zip', 'msi', 'exe', 'brew', 'dmg', 'apt', 'deb', 'dnf', 'rpm', 'flatpak'), f'{p}.install.type is unsupported')
+        source_fields = {'github_release': {'type', 'repo', 'asset_pattern', 'prerelease'}}.get(src['type'], {'type', 'package'})
         install_fields = {'type', 'launch', {'appimage': 'binary_name', 'tarball': 'bin', 'zip': 'bin'}.get(ins['type'], 'package')}
         require(set(src) <= source_fields, f'{p}.source has unsupported fields')
         require(set(ins) == install_fields, f'{p}.install has missing or unsupported fields')
@@ -93,11 +112,11 @@ def validate_catalog(data):
             require(isinstance(src.get('repo'), str) and bool(re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', src['repo'])), f'{p}.source.repo must be owner/repo')
             require(isinstance(src.get('asset_pattern'), str) and bool(src['asset_pattern']), f'{p}.source.asset_pattern is required (glob)')
             require(type(src.get('prerelease', False)) is bool, f'{p}.source.prerelease must be boolean')
-            require(ins['type'] in ('pacman_pkg', 'appimage', 'tarball', 'zip', 'msi', 'exe'), f'{p}: GitHub source requires a file installer')
+            require(ins['type'] in ('pacman_pkg', 'appimage', 'tarball', 'zip', 'msi', 'exe', 'dmg', 'deb', 'rpm'), f'{p}: GitHub source requires a file installer')
         else:
             require(isinstance(src.get('package'), str) and bool(PKG_RE.fullmatch(src['package'])), f'{p}.source.package is invalid')
             require(ins['type'] == ('pacman' if src['type'] == 'arch_repo' else src['type']), f'{p}: source and installer do not match')
-        if ins['type'] in ('pacman_pkg', 'pacman', 'aur', 'winget', 'msi', 'exe'):
+        if ins['type'] in ('pacman_pkg', 'pacman', 'aur', 'winget', 'msi', 'exe', 'brew', 'dmg', 'apt', 'deb', 'dnf', 'rpm', 'flatpak'):
             require(isinstance(ins.get('package'), str) and bool(PKG_RE.fullmatch(ins['package'])), f'{p}.install.package is invalid')
         if ins['type'] == 'appimage':
             b = ins.get('binary_name', '')
@@ -151,6 +170,7 @@ class Cancelled(Exception):
 class Engine:
     def __init__(self, catalog, home=None, api_base='https://api.github.com', web_base='https://github.com'):
         self.catalog = Catalog(catalog)
+        self.platform = detect_platform()
         self.home = Path(home or Path.home())
         if IS_WIN and home is None:
             local = Path(os.environ.get('LOCALAPPDATA') or self.home / 'AppData/Local')
@@ -254,6 +274,27 @@ class Engine:
             return record.get('version') or 'unknown'
         return None
 
+    def privilege_cmd(self):
+        if os.environ.get('ARMIN_LAUNCHER_SUDO') == '1':
+            return [] if hasattr(os, 'geteuid') and os.geteuid() == 0 else ['sudo', '-n']
+        return ['pkexec']
+
+    def is_compatible(self, app):
+        t = app['install']['type']
+        if self.platform == 'windows':
+            return t in ('winget', 'msi', 'exe', 'zip')
+        if self.platform == 'macos':
+            return t in ('brew', 'dmg', 'tarball')
+        if t in ('pacman_pkg', 'pacman', 'aur'):
+            return self.platform == 'arch' or bool(shutil.which('pacman'))
+        if t in ('apt', 'deb'):
+            return self.platform == 'debian' or bool(shutil.which('apt-get'))
+        if t in ('dnf', 'rpm'):
+            return self.platform == 'fedora' or bool(shutil.which('dnf'))
+        if t == 'flatpak':
+            return bool(shutil.which('flatpak'))
+        return t in ('appimage', 'tarball')
+
     def icon_url(self, appid):
         icons_dir = ROOT / 'ui' / 'icons'
         for ext in ('png', 'svg'):
@@ -274,7 +315,8 @@ class Engine:
                 app['job'] = self.jobs.get(app['id'])
                 app['verification'] = self.state['installed'].get(app['id'], {}).get('verification')
                 app['icon'] = self.icon_url(app['id'])
-            return dict(apps=apps, busy=self.busy, refreshing=self.refreshing, notice=self.notice, last_error=self.last_error, warnings=self.warnings, prefs=copy.deepcopy(self.state.get('prefs', {})), revision=time.monotonic())
+                app['compatible'] = self.is_compatible(app)
+            return dict(apps=apps, busy=self.busy, refreshing=self.refreshing, notice=self.notice, last_error=self.last_error, warnings=self.warnings, platform=self.platform, prefs=copy.deepcopy(self.state.get('prefs', {})), revision=time.monotonic())
 
     def newer(self, latest, installed):
         if installed == 'unknown':
@@ -601,22 +643,28 @@ class Engine:
                     else:
                         target = self.install_tarball(app, path, release['tag'])
                     self.record(app, release['tag'], target, verification)
-                    if not IS_WIN:
+                    if IS_WIN and ins['type'] == 'zip':
+                        install_windows_shortcut(app['name'], str(target))
+                    elif not IS_WIN:
                         self.desktop(app, target)
                 elif ins['type'] == 'winget':
                     if not shutil.which('winget'):
                         raise ValueError('winget is not installed on this Windows system')
                     self.transaction(['winget', 'install', '--id', ins['package'], '-e', '--accept-package-agreements', '--accept-source-agreements'], [appid])
                 elif ins['type'] == 'pacman':
-                    self.transaction(['pkexec', 'pacman', '-S', '--needed', '--noconfirm', ins['package']], [appid])
-                else:
+                    self.transaction([*self.privilege_cmd(), 'pacman', '-S', '--needed', '--noconfirm', ins['package']], [appid])
+                elif ins['type'] == 'aur':
                     helper = shutil.which('yay') or shutil.which('paru')
                     if not helper:
                         raise ValueError('Install yay or paru to manage AUR applications')
-                    self.transaction([helper, '-S', '--needed', '--noconfirm', '--sudo', 'pkexec', '--sudoflags', '', ins['package']], [appid])
+                    priv = self.privilege_cmd()
+                    sudo_args = ['--sudo', priv[0], '--sudoflags', ' '.join(priv[1:])] if priv else []
+                    self.transaction([helper, '-S', '--needed', '--noconfirm', *sudo_args, ins['package']], [appid])
+                else:
+                    raise ValueError(f'Installer type {ins["type"]} is not yet implemented on {self.platform}')
                 self.status(appid, 'Complete', message=verification if app['source']['type'] == 'github_release' else 'Package installation completed')
             if packages:
-                self.transaction(['pkexec', 'pacman', '-U', '--noconfirm', *[str(p) for _, p, _, _ in packages]], [a['id'] for a, _, _, _ in packages])
+                self.transaction([*self.privilege_cmd(), 'pacman', '-U', '--noconfirm', *[str(p) for _, p, _, _ in packages]], [a['id'] for a, _, _, _ in packages])
                 for app, path, tag, verification in packages:
                     self.record(app, tag, path, verification)
                     self.status(app['id'], 'Complete', message=verification)
@@ -998,6 +1046,43 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.json(400, {'error': str(e)})
 
 
+def install_windows_shortcut(name, target, args=''):
+    if not IS_WIN:
+        return
+    appdata = os.environ.get('APPDATA')
+    if not appdata:
+        return
+    programs = Path(appdata) / 'Microsoft/Windows/Start Menu/Programs'
+    programs.mkdir(parents=True, exist_ok=True)
+    safe_name = re.sub(r'[<>:"/\\|?*]', '', name).strip() or 'App'
+    lnk = programs / f'{safe_name}.lnk'
+    ps = (
+        f'$s=(New-Object -ComObject WScript.Shell).CreateShortcut({json.dumps(str(lnk))});'
+        f'$s.TargetPath={json.dumps(str(target))};'
+        f'$s.Arguments={json.dumps(str(args))};'
+        f'$s.WorkingDirectory={json.dumps(str(Path(target).parent))};'
+        f'$s.Save()'
+    )
+    subprocess.run(['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', ps], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+
+
+def ensure_home_menu_shortcut():
+    try:
+        if IS_WIN:
+            appdata = os.environ.get('APPDATA')
+            if appdata and not (Path(appdata) / 'Microsoft/Windows/Start Menu/Programs/Armin Launcher.lnk').exists():
+                pyw = Path(sys.executable).with_name('pythonw.exe')
+                exe = str(pyw if pyw.is_file() else sys.executable)
+                install_windows_shortcut('Armin Launcher', exe, f'"{ROOT / "ArminLauncher.pyw"}"')
+        elif not IS_MAC:
+            entry = Path.home() / '.local/share/applications/ArminLauncher.desktop'
+            installer = ROOT / 'install-desktop'
+            if not entry.exists() and installer.is_file():
+                subprocess.run([sys.executable, str(installer)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    except OSError:
+        pass
+
+
 def find_browser():
     if IS_WIN:
         for name in ('msedge', 'chrome', 'brave', 'chromium'):
@@ -1037,6 +1122,7 @@ def main():
         parser.exit(1, f'Armin Launcher: {e}\n')
     print(server.origin, flush=True)
     if not args.no_browser:
+        ensure_home_menu_shortcut()
         browser = find_browser()
         if browser:
             kw = {'creationflags': subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP} if IS_WIN else {'start_new_session': True}
