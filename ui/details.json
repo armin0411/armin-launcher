@@ -668,24 +668,6 @@
     ],
     "shots": []
   },
-  "inkscape": {
-    "about": "A professional vector graphics editor for illustrators, designers, and web artists using the open W3C SVG standard.",
-    "features": [
-      {
-        "title": "Precision vector paths",
-        "text": "Bezier, spiro, and node editing with boolean operations and live path effects."
-      },
-      {
-        "title": "Native SVG workflow",
-        "text": "Clean, standards-compliant SVG output alongside PDF, EPS, PNG, and DXF export."
-      },
-      {
-        "title": "Text & typography",
-        "text": "Multi-line text, text-on-path, kerning, and variable font support."
-      }
-    ],
-    "shots": []
-  },
   "audacity": {
     "about": "An easy-to-use, multi-track audio editor and recorder for podcasts, music, sound effects, and voice-overs.",
     "features": [

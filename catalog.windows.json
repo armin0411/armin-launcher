@@ -439,25 +439,6 @@
       "hidden": false
     },
     {
-      "id": "inkscape",
-      "name": "Inkscape",
-      "publisher": "Inkscape Project",
-      "category": "Digital Art",
-      "tagline": "Vector graphics editor",
-      "accent": "#555555",
-      "website": "https://inkscape.org",
-      "source": {
-        "type": "winget",
-        "package": "Inkscape.Inkscape"
-      },
-      "install": {
-        "type": "winget",
-        "package": "Inkscape.Inkscape",
-        "launch": "inkscape"
-      },
-      "hidden": false
-    },
-    {
       "id": "audacity",
       "name": "Audacity",
       "publisher": "Audacity Team",
