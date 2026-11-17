@@ -188,6 +188,7 @@ class Engine:
         for key in ('installed', 'releases', 'http', 'prefs'):
             self.state.setdefault(key, {})
         self.api_base, self.web_base = api_base.rstrip('/'), web_base.rstrip('/')
+        self.gh_token = self._detect_gh_token() if self.api_base == 'https://api.github.com' else ''
         self.listeners = set()
         self.jobs = {}
         self.busy = False
@@ -339,8 +340,25 @@ class Engine:
             return False
         return pa > pb
 
+    def _detect_gh_token(self):
+        for env_key in ('GITHUB_TOKEN', 'GH_TOKEN'):
+            val = os.environ.get(env_key, '').strip()
+            if val:
+                return val
+        if shutil.which('gh'):
+            try:
+                p = subprocess.run(['gh', 'auth', 'token'], capture_output=True, text=True, timeout=3)
+                if p.returncode == 0 and p.stdout.strip():
+                    return p.stdout.strip()
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+        return ''
+
     def request(self, url, headers=None, method='GET'):
-        return urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent': 'LaunchCraft/1', **(headers or {})}, method=method), timeout=20)
+        req_headers = {'User-Agent': 'ArminLauncher/1', **(headers or {})}
+        if self.gh_token and url.startswith('https://api.github.com/'):
+            req_headers.setdefault('Authorization', f'Bearer {self.gh_token}')
+        return urllib.request.urlopen(urllib.request.Request(url, headers=req_headers, method=method), timeout=20)
 
     def github_release(self, app):
         src = app['source']
@@ -391,11 +409,25 @@ class Engine:
             pattern = src['asset_pattern'].replace('{tag}', tag).replace('{version}', tag.lstrip('v'))
             if not any(c in pattern for c in '*?['):
                 old['asset'] = dict(name=pattern, browser_download_url=f'{self.web_base}/{src["repo"]}/releases/download/{urllib.parse.quote(tag, safe="")}/{urllib.parse.quote(pattern)}')
+            else:
+                try:
+                    exp_url = f'{self.web_base}/{src["repo"]}/releases/expanded_assets/{urllib.parse.quote(tag, safe="")}'
+                    with self.request(exp_url) as r:
+                        html = r.read(1024 * 1024).decode('utf-8', 'ignore')
+                    hrefs = re.findall(r'href="(/[^"]+/releases/download/[^"]+)"', html)
+                    for href in hrefs:
+                        fname = urllib.parse.unquote(href.rsplit('/', 1)[-1])
+                        if fnmatch.fnmatchcase(fname, pattern):
+                            old['asset'] = dict(name=fname, browser_download_url=self.web_base.rstrip('/') + href)
+                            break
+                except Exception:
+                    pass
         old.update(checked=time.time(), warning='GitHub rate limited; version from latest redirect. ' + ('Asset metadata unavailable; refresh later before installing.' if not old.get('asset') else 'Checksum metadata may be unavailable.'))
         return old
 
     def refresh(self):
         warnings = []
+        rate_limited = []
         try:
             apps = self.catalog.load()['apps']
             updates = {}
@@ -434,11 +466,18 @@ class Engine:
                     with self.lock:
                         self.state['releases'][app['id']] = release
                     if release.get('warning'):
-                        warnings.append(f'{app["name"]}: {release["warning"]}')
+                        if 'GitHub rate limited' in release['warning']:
+                            rate_limited.append(app['name'])
+                            if 'Asset metadata unavailable' in release['warning']:
+                                warnings.append(f'{app["name"]}: {release["warning"]}')
+                        else:
+                            warnings.append(f'{app["name"]}: {release["warning"]}')
                 except Cancelled:
                     raise
                 except Exception as e:
                     warnings.append(f'{app["name"]}: {e}')
+            if rate_limited:
+                warnings.insert(0, f'GitHub API rate limit reached ({len(rate_limited)} apps); versions fetched via release redirects.')
             self.save()
             self.notice = 'Refresh complete' if not warnings else 'Refresh complete with warnings'
         finally:
