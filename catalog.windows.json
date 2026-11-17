@@ -1,0 +1,499 @@
+{
+  "version": 1,
+  "apps": [
+    {
+      "id": "photocraft",
+      "name": "PhotoCraft",
+      "publisher": "ArtCraft",
+      "category": "Craft Suite",
+      "tagline": "Image editing",
+      "accent": "#2f7bf5",
+      "website": "https://getartcraft.com/apps/photocraft",
+      "source": {
+        "type": "github_release",
+        "repo": "storytold/photocraft",
+        "asset_pattern": "*.msi"
+      },
+      "install": {
+        "type": "msi",
+        "package": "ai.storyteller.photocraft",
+        "launch": "photocraft"
+      },
+      "hidden": false
+    },
+    {
+      "id": "vectorcraft",
+      "name": "VectorCraft",
+      "publisher": "ArtCraft",
+      "category": "Craft Suite",
+      "tagline": "Vector illustration",
+      "accent": "#e8573f",
+      "website": "https://getartcraft.com/apps/vectorcraft",
+      "source": {
+        "type": "github_release",
+        "repo": "storytold/vectorcraft",
+        "asset_pattern": "*.msi"
+      },
+      "install": {
+        "type": "msi",
+        "package": "ai.storyteller.vectorcraft",
+        "launch": "vectorcraft"
+      },
+      "hidden": false
+    },
+    {
+      "id": "filmcraft",
+      "name": "FilmCraft",
+      "publisher": "ArtCraft",
+      "category": "Craft Suite",
+      "tagline": "Video editing, color and sound",
+      "accent": "#8b5cf6",
+      "website": "https://getartcraft.com/apps/filmcraft",
+      "source": {
+        "type": "github_release",
+        "repo": "storytold/filmcraft",
+        "asset_pattern": "*.msi"
+      },
+      "install": {
+        "type": "msi",
+        "package": "ai.storyteller.filmcraft",
+        "launch": "filmcraft"
+      },
+      "hidden": false
+    },
+    {
+      "id": "lightcraft",
+      "name": "LightCraft",
+      "publisher": "ArtCraft",
+      "category": "Craft Suite",
+      "tagline": "Photo library and raw development",
+      "accent": "#f2a516",
+      "website": "https://getartcraft.com/apps/lightcraft",
+      "source": {
+        "type": "github_release",
+        "repo": "storytold/lightcraft",
+        "asset_pattern": "*.msi"
+      },
+      "install": {
+        "type": "msi",
+        "package": "ai.storyteller.lightcraft",
+        "launch": "lightcraft"
+      },
+      "hidden": false
+    },
+    {
+      "id": "pdfcraft",
+      "name": "PdfCraft",
+      "publisher": "ArtCraft",
+      "category": "Craft Suite",
+      "tagline": "Reading, organizing and protecting PDFs",
+      "accent": "#e8204f",
+      "website": "https://getartcraft.com/apps/pdfcraft",
+      "source": {
+        "type": "github_release",
+        "repo": "storytold/pdfcraft",
+        "asset_pattern": "*.msi"
+      },
+      "install": {
+        "type": "msi",
+        "package": "ai.storyteller.pdfcraft",
+        "launch": "pdfcraft"
+      },
+      "hidden": false
+    },
+    {
+      "id": "effectcraft",
+      "name": "EffectCraft",
+      "publisher": "ArtCraft",
+      "category": "Craft Suite",
+      "tagline": "Motion graphics and visual effects",
+      "accent": "#e0368f",
+      "website": "https://getartcraft.com/apps/effectcraft",
+      "source": {
+        "type": "github_release",
+        "repo": "storytold/effectcraft",
+        "asset_pattern": "*.msi"
+      },
+      "install": {
+        "type": "msi",
+        "package": "ai.storyteller.effectcraft",
+        "launch": "effectcraft"
+      },
+      "hidden": false
+    },
+    {
+      "id": "anicraft",
+      "name": "AniCraft",
+      "publisher": "ArtCraft",
+      "category": "Craft Suite",
+      "tagline": "2D vector animation",
+      "accent": "#dac604",
+      "website": "https://github.com/storytold/anicraft",
+      "source": {
+        "type": "github_release",
+        "repo": "storytold/anicraft",
+        "asset_pattern": "*.msi"
+      },
+      "install": {
+        "type": "msi",
+        "package": "ai.storyteller.anicraft",
+        "launch": "anicraft"
+      },
+      "hidden": false
+    },
+    {
+      "id": "designcraft",
+      "name": "DesignCraft",
+      "publisher": "ArtCraft",
+      "category": "Craft Suite",
+      "tagline": "Page layout and publishing",
+      "accent": "#7bb51c",
+      "website": "https://getartcraft.com/apps/designcraft",
+      "source": {
+        "type": "github_release",
+        "repo": "storytold/designcraft",
+        "asset_pattern": "*.msi"
+      },
+      "install": {
+        "type": "msi",
+        "package": "ai.storyteller.designcraft",
+        "launch": "designcraft"
+      },
+      "hidden": false
+    },
+    {
+      "id": "figcraft",
+      "name": "FigCraft",
+      "publisher": "ArtCraft",
+      "category": "Craft Suite",
+      "tagline": "Interface design and prototyping",
+      "accent": "#02da96",
+      "website": "https://getartcraft.com/apps/figcraft",
+      "source": {
+        "type": "github_release",
+        "repo": "storytold/figcraft",
+        "asset_pattern": "*.msi"
+      },
+      "install": {
+        "type": "msi",
+        "package": "ai.storyteller.figcraft",
+        "launch": "figcraft"
+      },
+      "hidden": false
+    },
+    {
+      "id": "soundcraft",
+      "name": "SoundCraft",
+      "publisher": "ArtCraft",
+      "category": "Craft Suite",
+      "tagline": "Recording, editing and mixing audio",
+      "accent": "#1fa5c9",
+      "website": "https://getartcraft.com/apps/soundcraft",
+      "source": {
+        "type": "github_release",
+        "repo": "storytold/soundcraft",
+        "asset_pattern": "*.msi"
+      },
+      "install": {
+        "type": "msi",
+        "package": "ai.storyteller.soundcraft",
+        "launch": "soundcraft"
+      },
+      "hidden": false
+    },
+    {
+      "id": "wordcraft",
+      "name": "WordCraft",
+      "publisher": "ArtCraft",
+      "category": "Craft Suite",
+      "tagline": "Writing and document design",
+      "accent": "#3f5fe0",
+      "website": "https://getartcraft.com/apps/wordcraft",
+      "source": {
+        "type": "github_release",
+        "repo": "storytold/wordcraft",
+        "asset_pattern": "*.msi"
+      },
+      "install": {
+        "type": "msi",
+        "package": "ai.storyteller.wordcraft",
+        "launch": "wordcraft"
+      },
+      "hidden": false
+    },
+    {
+      "id": "deckcraft",
+      "name": "DeckCraft",
+      "publisher": "ArtCraft",
+      "category": "Craft Suite",
+      "tagline": "Presentations and slide shows",
+      "accent": "#f07a1e",
+      "website": "https://getartcraft.com/apps/deckcraft",
+      "source": {
+        "type": "github_release",
+        "repo": "storytold/deckcraft",
+        "asset_pattern": "*.msi"
+      },
+      "install": {
+        "type": "msi",
+        "package": "ai.storyteller.deckcraft",
+        "launch": "deckcraft"
+      },
+      "hidden": false
+    },
+    {
+      "id": "cadcraft",
+      "name": "CADCraft",
+      "publisher": "ArtCraft",
+      "category": "Craft Suite",
+      "tagline": "Computer-aided design and drafting",
+      "accent": "#3ea6e8",
+      "website": "https://getartcraft.com/apps/cadcraft",
+      "source": {
+        "type": "github_release",
+        "repo": "storytold/cadcraft",
+        "asset_pattern": "*.msi"
+      },
+      "install": {
+        "type": "msi",
+        "package": "ai.storyteller.cadcraft",
+        "launch": "cadcraft"
+      },
+      "hidden": false
+    },
+    {
+      "id": "gridcraft",
+      "name": "GridCraft",
+      "publisher": "ArtCraft",
+      "category": "Craft Suite",
+      "tagline": "Spreadsheets and data",
+      "accent": "#1f9d55",
+      "website": "https://getartcraft.com/apps/gridcraft",
+      "source": {
+        "type": "github_release",
+        "repo": "storytold/gridcraft",
+        "asset_pattern": "*.msi"
+      },
+      "install": {
+        "type": "msi",
+        "package": "ai.storyteller.gridcraft",
+        "launch": "gridcraft"
+      },
+      "hidden": false
+    },
+    {
+      "id": "texturecraft",
+      "name": "TextureCraft",
+      "publisher": "ArtCraft",
+      "category": "Craft Suite",
+      "tagline": "3D texture painting",
+      "accent": "#c2672b",
+      "website": "https://getartcraft.com/apps/texturecraft",
+      "source": {
+        "type": "github_release",
+        "repo": "storytold/texturecraft",
+        "asset_pattern": "*.msi"
+      },
+      "install": {
+        "type": "msi",
+        "package": "ai.storyteller.texturecraft",
+        "launch": "texturecraft"
+      },
+      "hidden": false
+    },
+    {
+      "id": "materialcraft",
+      "name": "MaterialCraft",
+      "publisher": "ArtCraft",
+      "category": "Craft Suite",
+      "tagline": "Procedural material design",
+      "accent": "#178a9c",
+      "website": "https://getartcraft.com/apps/materialcraft",
+      "source": {
+        "type": "github_release",
+        "repo": "storytold/materialcraft",
+        "asset_pattern": "*.msi"
+      },
+      "install": {
+        "type": "msi",
+        "package": "ai.storyteller.materialcraft",
+        "launch": "materialcraft"
+      },
+      "hidden": false
+    },
+    {
+      "id": "craft-anything",
+      "name": "Craft Anything",
+      "publisher": "ArtCraft",
+      "category": "Craft Suite",
+      "tagline": "Find out how any software works, then craft your own",
+      "accent": "#4e7bfb",
+      "website": "https://getartcraft.com/apps/craft-anything",
+      "source": {
+        "type": "github_release",
+        "repo": "storytold/craft-anything",
+        "asset_pattern": "*.msi"
+      },
+      "install": {
+        "type": "msi",
+        "package": "ai.storyteller.craft-anything",
+        "launch": "craft-anything"
+      },
+      "hidden": false
+    },
+    {
+      "id": "solidcraft",
+      "name": "SolidCraft",
+      "publisher": "Tangency Labs",
+      "category": "Craft Suite",
+      "tagline": "Parametric 3D CAD",
+      "accent": "#46a1fb",
+      "website": "https://solidcraft.io",
+      "source": {
+        "type": "github_release",
+        "repo": "tangency-labs/solidcraft",
+        "asset_pattern": "*.msi"
+      },
+      "install": {
+        "type": "msi",
+        "package": "io.tangencylabs.solidcraft",
+        "launch": "solidcraft"
+      },
+      "hidden": false
+    },
+    {
+      "id": "mailcraft",
+      "name": "MailCraft",
+      "publisher": "UCS Care Group",
+      "category": "Craft Suite",
+      "tagline": "Mail, calendar and contacts",
+      "accent": "#0f68f0",
+      "website": "https://mailcraft.work",
+      "source": {
+        "type": "github_release",
+        "repo": "UCS-Care-Group/mailcraft",
+        "asset_pattern": "*.msi"
+      },
+      "install": {
+        "type": "msi",
+        "package": "mailcraft",
+        "launch": "mailcraft.AppImage"
+      },
+      "hidden": false
+    },
+    {
+      "id": "godot",
+      "name": "Godot",
+      "publisher": "Godot Engine",
+      "category": "Game development",
+      "tagline": "2D and 3D game engine",
+      "accent": "#478cbf",
+      "website": "https://godotengine.org",
+      "source": {
+        "type": "winget",
+        "package": "GodotEngine.GodotEngine"
+      },
+      "install": {
+        "type": "winget",
+        "package": "GodotEngine.GodotEngine",
+        "launch": "godot"
+      },
+      "hidden": false
+    },
+    {
+      "id": "blender",
+      "name": "Blender",
+      "publisher": "Blender Foundation",
+      "category": "3D",
+      "tagline": "3D modeling, animation and rendering",
+      "accent": "#e87d0d",
+      "website": "https://www.blender.org",
+      "source": {
+        "type": "winget",
+        "package": "BlenderFoundation.Blender"
+      },
+      "install": {
+        "type": "winget",
+        "package": "BlenderFoundation.Blender",
+        "launch": "blender"
+      },
+      "hidden": false
+    },
+    {
+      "id": "krita",
+      "name": "Krita",
+      "publisher": "Krita Foundation",
+      "category": "Digital Art",
+      "tagline": "Digital painting and illustration",
+      "accent": "#f04480",
+      "website": "https://krita.org",
+      "source": {
+        "type": "winget",
+        "package": "KDE.Krita"
+      },
+      "install": {
+        "type": "winget",
+        "package": "KDE.Krita",
+        "launch": "krita"
+      },
+      "hidden": false
+    },
+    {
+      "id": "inkscape",
+      "name": "Inkscape",
+      "publisher": "Inkscape Project",
+      "category": "Digital Art",
+      "tagline": "Vector graphics editor",
+      "accent": "#555555",
+      "website": "https://inkscape.org",
+      "source": {
+        "type": "winget",
+        "package": "Inkscape.Inkscape"
+      },
+      "install": {
+        "type": "winget",
+        "package": "Inkscape.Inkscape",
+        "launch": "inkscape"
+      },
+      "hidden": false
+    },
+    {
+      "id": "audacity",
+      "name": "Audacity",
+      "publisher": "Audacity Team",
+      "category": "Audio",
+      "tagline": "Audio recording and editing",
+      "accent": "#3155d9",
+      "website": "https://www.audacityteam.org",
+      "source": {
+        "type": "winget",
+        "package": "Audacity.Audacity"
+      },
+      "install": {
+        "type": "winget",
+        "package": "Audacity.Audacity",
+        "launch": "audacity"
+      },
+      "hidden": false
+    },
+    {
+      "id": "kdenlive",
+      "name": "Kdenlive",
+      "publisher": "KDE",
+      "category": "Video",
+      "tagline": "Nonlinear video editing",
+      "accent": "#527dba",
+      "website": "https://kdenlive.org",
+      "source": {
+        "type": "winget",
+        "package": "KDE.Kdenlive"
+      },
+      "install": {
+        "type": "winget",
+        "package": "KDE.Kdenlive",
+        "launch": "kdenlive"
+      },
+      "hidden": false
+    }
+  ]
+}

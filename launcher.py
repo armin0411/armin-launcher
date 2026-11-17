@@ -16,6 +16,7 @@ import shlex
 import shutil
 import signal
 import subprocess
+import sys
 import tarfile
 import tempfile
 import threading
@@ -23,8 +24,18 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-import fcntl
+import webbrowser
+import zipfile
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
+try:
+    import msvcrt
+except ImportError:
+    msvcrt = None
 
+IS_WIN = sys.platform == 'win32'
 ROOT = Path(__file__).resolve().parent
 ID_RE = re.compile(r'^[a-z0-9][a-z0-9._-]*$')
 PKG_RE = re.compile(r'^[a-zA-Z0-9@_+][a-zA-Z0-9@._+-]*$')
@@ -72,26 +83,26 @@ def validate_catalog(data):
         src, ins = app.get('source'), app.get('install')
         require(isinstance(src, dict), f'{p}.source must be an object')
         require(isinstance(ins, dict), f'{p}.install must be an object')
-        require(src.get('type') in ('github_release', 'arch_repo', 'aur'), f'{p}.source.type is unsupported')
-        require(ins.get('type') in ('pacman_pkg', 'appimage', 'tarball', 'pacman', 'aur'), f'{p}.install.type is unsupported')
-        source_fields = {'github_release': {'type', 'repo', 'asset_pattern', 'prerelease'}, 'arch_repo': {'type', 'package'}, 'aur': {'type', 'package'}}[src['type']]
-        install_fields = {'type', 'launch', {'appimage': 'binary_name', 'tarball': 'bin'}.get(ins['type'], 'package')}
+        require(src.get('type') in ('github_release', 'arch_repo', 'aur', 'winget'), f'{p}.source.type is unsupported')
+        require(ins.get('type') in ('pacman_pkg', 'appimage', 'tarball', 'pacman', 'aur', 'winget', 'zip', 'msi', 'exe'), f'{p}.install.type is unsupported')
+        source_fields = {'github_release': {'type', 'repo', 'asset_pattern', 'prerelease'}, 'arch_repo': {'type', 'package'}, 'aur': {'type', 'package'}, 'winget': {'type', 'package'}}[src['type']]
+        install_fields = {'type', 'launch', {'appimage': 'binary_name', 'tarball': 'bin', 'zip': 'bin'}.get(ins['type'], 'package')}
         require(set(src) <= source_fields, f'{p}.source has unsupported fields')
         require(set(ins) == install_fields, f'{p}.install has missing or unsupported fields')
         if src['type'] == 'github_release':
             require(isinstance(src.get('repo'), str) and bool(re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', src['repo'])), f'{p}.source.repo must be owner/repo')
             require(isinstance(src.get('asset_pattern'), str) and bool(src['asset_pattern']), f'{p}.source.asset_pattern is required (glob)')
             require(type(src.get('prerelease', False)) is bool, f'{p}.source.prerelease must be boolean')
-            require(ins['type'] in ('pacman_pkg', 'appimage', 'tarball'), f'{p}: GitHub source requires a file installer')
+            require(ins['type'] in ('pacman_pkg', 'appimage', 'tarball', 'zip', 'msi', 'exe'), f'{p}: GitHub source requires a file installer')
         else:
             require(isinstance(src.get('package'), str) and bool(PKG_RE.fullmatch(src['package'])), f'{p}.source.package is invalid')
-            require(ins['type'] == ('pacman' if src['type'] == 'arch_repo' else 'aur'), f'{p}: source and installer do not match')
-        if ins['type'] in ('pacman_pkg', 'pacman', 'aur'):
+            require(ins['type'] == ('pacman' if src['type'] == 'arch_repo' else src['type']), f'{p}: source and installer do not match')
+        if ins['type'] in ('pacman_pkg', 'pacman', 'aur', 'winget', 'msi', 'exe'):
             require(isinstance(ins.get('package'), str) and bool(PKG_RE.fullmatch(ins['package'])), f'{p}.install.package is invalid')
         if ins['type'] == 'appimage':
             b = ins.get('binary_name', '')
             require(isinstance(b, str) and bool(ID_RE.fullmatch(b.lower())) and b not in ('.', '..'), f'{p}.install.binary_name must be a filename')
-        if ins['type'] == 'tarball':
+        if ins['type'] in ('tarball', 'zip'):
             b = ins.get('bin', '')
             require(isinstance(b, str) and bool(b) and not Path(b).is_absolute() and '..' not in Path(b).parts, f'{p}.install.bin must be a relative path')
         launch = ins.get('launch')
@@ -114,15 +125,23 @@ class Catalog:
         # Shared lock used by the HTTP editor and launchcraft-ctl. Never held for downloads.
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.with_suffix(self.path.suffix + '.lock').open('a') as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
-            before = self.path.read_bytes()
-            data = validate_catalog(json.loads(before))
-            action(data)
-            validate_catalog(data)
-            if self.path.read_bytes() != before:
-                raise ValueError('Catalog changed externally; retry your edit')
-            atomic_json(self.path, data)
-            return data
+            if fcntl is not None:
+                fcntl.flock(lock, fcntl.LOCK_EX)
+            elif msvcrt is not None:
+                msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
+            try:
+                before = self.path.read_bytes()
+                data = validate_catalog(json.loads(before))
+                action(data)
+                validate_catalog(data)
+                if self.path.read_bytes() != before:
+                    raise ValueError('Catalog changed externally; retry your edit')
+                atomic_json(self.path, data)
+                return data
+            finally:
+                if msvcrt is not None and fcntl is None:
+                    lock.seek(0)
+                    msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
 
 
 class Cancelled(Exception):
@@ -133,8 +152,13 @@ class Engine:
     def __init__(self, catalog, home=None, api_base='https://api.github.com', web_base='https://github.com'):
         self.catalog = Catalog(catalog)
         self.home = Path(home or Path.home())
-        self.data = self.home / '.local/share/launchcraft'
-        self.downloads = self.home / '.cache/launchcraft/downloads'
+        if IS_WIN and home is None:
+            local = Path(os.environ.get('LOCALAPPDATA') or self.home / 'AppData/Local')
+            self.data = local / 'ArminLauncher'
+            self.downloads = local / 'ArminLauncher/downloads'
+        else:
+            self.data = self.home / '.local/share/launchcraft'
+            self.downloads = self.home / '.cache/launchcraft/downloads'
         self.state_path = self.data / 'state.json'
         self.lock = threading.RLock()
         try:
@@ -175,7 +199,8 @@ class Engine:
         try:
             # Refresh helpers must not outlive the final browser connection.
             if self.refreshing and threading.current_thread() is self.worker:
-                process = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+                kw = {} if IS_WIN else {'start_new_session': True}
+                process = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, **kw)
                 deadline = time.monotonic() + timeout
                 try:
                     while True:
@@ -190,7 +215,10 @@ class Engine:
                             continue
                 finally:
                     if process.poll() is None:
-                        os.killpg(process.pid, signal.SIGTERM)
+                        if IS_WIN:
+                            process.terminate()
+                        else:
+                            os.killpg(process.pid, signal.SIGTERM)
                     process.communicate()
             return subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
         except (OSError, subprocess.TimeoutExpired) as e:
@@ -200,10 +228,26 @@ class Engine:
         ins = app['install']
         record = self.state['installed'].get(app['id'], {})
         if ins['type'] in ('pacman_pkg', 'pacman', 'aur'):
+            if IS_WIN:
+                return None
             p = self.command(['pacman', '-Q', ins['package']])
             if p.returncode == 0:
                 return p.stdout.strip().split(maxsplit=1)[-1]
             return None
+        if ins['type'] == 'winget':
+            if IS_WIN and shutil.which('winget'):
+                p = self.command(['winget', 'list', '--id', ins['package'], '-e', '--accept-source-agreements'], timeout=15)
+                if p.returncode == 0:
+                    for line in reversed(p.stdout.splitlines()):
+                        if ins['package'].lower() in line.lower():
+                            parts = line.split()
+                            return parts[-1] if len(parts) >= 2 else (record.get('version') or 'installed')
+            return record.get('version')
+        if ins['type'] in ('msi', 'exe'):
+            if record.get('version'):
+                return record['version']
+            exe = shlex.split(ins['launch'], posix=not IS_WIN)[0]
+            return 'installed' if shutil.which(exe) else None
         target = (self.home / 'Applications' / ins['binary_name'] if ins['type'] == 'appimage'
                   else self.data / 'apps' / app['id'] / 'current' / ins['bin'])
         if target.is_file():
@@ -334,6 +378,10 @@ class Engine:
                         if not version and src['type'] == 'arch_repo':
                             p = self.command(['pacman', '-Si', src['package']])
                             m = re.search(r'^Version\s*:\s*(\S+)', p.stdout, re.M)
+                            version = m[1] if m else None
+                        elif not version and src['type'] == 'winget' and IS_WIN and shutil.which('winget'):
+                            p = self.command(['winget', 'show', '--id', src['package'], '-e', '--accept-source-agreements'], timeout=20)
+                            m = re.search(r'^Version:\s*(\S+)', p.stdout, re.M)
                             version = m[1] if m else None
                         release = dict(tag=version or self.installed(app), notes='Package updates use the configured package databases.', url=app['website'], checked=time.time())
                     with self.lock:
@@ -542,10 +590,23 @@ class Engine:
                             os.replace(staging, target)
                         finally:
                             Path(staging).unlink(missing_ok=True)
+                    elif ins['type'] == 'zip':
+                        target = self.install_zip(app, path, release['tag'])
+                    elif ins['type'] == 'msi':
+                        self.transaction(['msiexec', '/i', str(path), '/passive', '/norestart'], [appid])
+                        target = path
+                    elif ins['type'] == 'exe':
+                        self.transaction([str(path), '/S'], [appid])
+                        target = path
                     else:
                         target = self.install_tarball(app, path, release['tag'])
                     self.record(app, release['tag'], target, verification)
-                    self.desktop(app, target)
+                    if not IS_WIN:
+                        self.desktop(app, target)
+                elif ins['type'] == 'winget':
+                    if not shutil.which('winget'):
+                        raise ValueError('winget is not installed on this Windows system')
+                    self.transaction(['winget', 'install', '--id', ins['package'], '-e', '--accept-package-agreements', '--accept-source-agreements'], [appid])
                 elif ins['type'] == 'pacman':
                     self.transaction(['pkexec', 'pacman', '-S', '--needed', '--noconfirm', ins['package']], [appid])
                 else:
@@ -606,6 +667,46 @@ class Engine:
             if staging.exists():
                 shutil.rmtree(staging)
 
+    def install_zip(self, app, path, tag):
+        base = self.data / 'apps' / app['id']
+        releases = base / 'releases'
+        releases.mkdir(parents=True, exist_ok=True)
+        safe_tag = re.sub(r'[^a-zA-Z0-9._-]', '_', tag)
+        if safe_tag in ('.', '..', ''):
+            raise ValueError('Unsafe release tag')
+        staging = Path(tempfile.mkdtemp(prefix='.extract-', dir=releases))
+        dest = releases / safe_tag
+        try:
+            with zipfile.ZipFile(path, 'r') as archive:
+                for member in archive.infolist():
+                    if self.cancel.is_set():
+                        raise Cancelled()
+                    rel = Path(member.filename)
+                    if rel.is_absolute() or '..' in rel.parts:
+                        raise ValueError(f'Unsafe archive member: {member.filename}')
+                    archive.extract(member, staging)
+            binary = staging / app['install']['bin']
+            if not binary.is_file():
+                raise ValueError(f'Archive does not contain {app["install"]["bin"]}')
+            if not dest.exists():
+                os.replace(staging, dest)
+            current = base / 'current'
+            if IS_WIN:
+                if current.exists() or current.is_symlink():
+                    shutil.rmtree(current, ignore_errors=True)
+                shutil.copytree(dest, current)
+            else:
+                link = base / ('.current-' + secrets.token_hex(5))
+                try:
+                    link.symlink_to(Path('releases') / safe_tag)
+                    os.replace(link, current)
+                finally:
+                    link.unlink(missing_ok=True)
+            return current / app['install']['bin']
+        finally:
+            if staging.exists():
+                shutil.rmtree(staging)
+
     def record(self, app, version, path, verification):
         with self.lock:
             self.state['installed'][app['id']] = dict(version=version, path=str(path), verification=verification, date=time.time())
@@ -613,9 +714,9 @@ class Engine:
 
     def launch_argv(self, app, target=None):
         launch = app['install']['launch']
-        argv = shlex.split(launch) if isinstance(launch, str) else list(launch)
+        argv = shlex.split(launch, posix=not IS_WIN) if isinstance(launch, str) else list(launch)
         ins = app['install']
-        if ins['type'] in ('appimage', 'tarball'):
+        if ins['type'] in ('appimage', 'tarball', 'zip'):
             target = target or (self.home / 'Applications' / ins['binary_name'] if ins['type'] == 'appimage' else self.data / 'apps' / app['id'] / 'current' / ins['bin'])
             argv[0] = str(target)
         return [str(Path(x).expanduser()) if x.startswith('~/') else x for x in argv]
@@ -632,7 +733,8 @@ class Engine:
         app = self.app(appid)
         if not app or not self.installed(app):
             raise ValueError('App is not installed')
-        subprocess.Popen(self.launch_argv(app), start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        kw = {'creationflags': subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP} if IS_WIN else {'start_new_session': True}
+        subprocess.Popen(self.launch_argv(app), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **kw)
 
     def uninstall(self, appid):
         app = self.app(appid)
@@ -643,6 +745,10 @@ class Engine:
         try:
             if ins['type'] in ('pacman_pkg', 'pacman', 'aur'):
                 self.transaction(['pkexec', 'pacman', '-R', '--noconfirm', ins['package']], [appid])
+            elif ins['type'] == 'winget':
+                if not shutil.which('winget'):
+                    raise ValueError('winget is not installed on this Windows system')
+                self.transaction(['winget', 'uninstall', '--id', ins['package'], '-e'], [appid])
             elif ins['type'] == 'appimage':
                 (self.home / 'Applications' / ins['binary_name']).unlink(missing_ok=True)
             else:
@@ -651,7 +757,8 @@ class Engine:
                     raise ValueError('Refusing to remove linked application directory')
                 if base.exists():
                     shutil.rmtree(base)
-            (self.home / '.local/share/applications' / f'launchcraft-{appid}.desktop').unlink(missing_ok=True)
+            if not IS_WIN:
+                (self.home / '.local/share/applications' / f'launchcraft-{appid}.desktop').unlink(missing_ok=True)
             self.state['installed'].pop(appid, None)
             self.save()
             self.status(appid, 'Complete')
@@ -873,10 +980,32 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.json(400, {'error': str(e)})
 
 
+def find_browser():
+    if IS_WIN:
+        for name in ('msedge', 'chrome', 'brave', 'chromium'):
+            if found := shutil.which(name):
+                return found
+        for base in (os.environ.get('ProgramFiles'), os.environ.get('ProgramFiles(x86)'), os.environ.get('LOCALAPPDATA')):
+            if not base:
+                continue
+            for rel in (
+                'Microsoft/Edge/Application/msedge.exe',
+                'Google/Chrome/Application/chrome.exe',
+                'BraveSoftware/Brave-Browser/Application/brave.exe',
+                'Chromium/Application/chrome.exe',
+            ):
+                p = Path(base) / rel
+                if p.is_file():
+                    return str(p)
+        return None
+    return next((shutil.which(x) for x in ('chromium', 'chromium-browser', 'google-chrome', 'brave') if shutil.which(x)), None)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--port', type=int, default=0)
-    parser.add_argument('--catalog', type=Path, default=ROOT / 'catalog.json')
+    default_catalog = ROOT / ('catalog.windows.json' if IS_WIN and (ROOT / 'catalog.windows.json').is_file() else 'catalog.json')
+    parser.add_argument('--catalog', type=Path, default=default_catalog)
     parser.add_argument('--headless-server', '--no-browser', action='store_true', dest='no_browser')
     parser.add_argument('--grace', type=float, default=3.5, help='seconds after the last SSE disconnect')
     parser.add_argument('--startup-timeout', type=float, default=20, help='seconds to wait for the first SSE client')
@@ -887,14 +1016,19 @@ def main():
         engine.catalog.load()
         server = Server(engine, args.port, max(.1, args.grace), max(.1, args.startup_timeout))
     except (OSError, ValueError) as e:
-        parser.exit(1, f'LaunchCraft: {e}\n')
+        parser.exit(1, f'Armin Launcher: {e}\n')
     print(server.origin, flush=True)
     if not args.no_browser:
-        browser = next((shutil.which(x) for x in ('chromium', 'chromium-browser', 'google-chrome', 'brave') if shutil.which(x)), None)
-        if not browser:
+        browser = find_browser()
+        if browser:
+            kw = {'creationflags': subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP} if IS_WIN else {'start_new_session': True}
+            argv = [browser, '--app=' + server.origin] + ([] if IS_WIN else ['--class=LaunchCraft'])
+            subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **kw)
+        elif IS_WIN:
+            webbrowser.open(server.origin)
+        else:
             server.server_close()
-            parser.exit(1, 'LaunchCraft: install a Chromium browser or use --no-browser\n')
-        subprocess.Popen([browser, '--app=' + server.origin, '--class=LaunchCraft'], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+            parser.exit(1, 'Armin Launcher: install a Chromium browser or use --no-browser\n')
     def stop(signum, frame):
         engine.cancel.set()
         server.stopping.set()

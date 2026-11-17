@@ -1,6 +1,6 @@
 # Armin Launcher
 
-**Armin Launcher** is a fast, zero-dependency local software launcher and updater for Linux built with Python's standard library and plain HTML, CSS, and JavaScript. No pip packages, Node.js, or background daemons required — it binds only to an ephemeral `127.0.0.1` port, opens in Chromium app mode, and exits cleanly when you close the window.
+**Armin Launcher** is a fast, zero-dependency local software launcher and updater for **Linux and Windows** built with Python's standard library and plain HTML, CSS, and JavaScript. No pip packages, Node.js, or background daemons required — it binds only to an ephemeral `127.0.0.1` port, opens in app mode, and exits cleanly when you close the window.
 
 [![Download Armin Launcher](https://img.shields.io/badge/%E2%AC%87%EF%B8%8F_Download_Armin_Launcher-Latest_Release-2d81ff?style=for-the-badge&logo=github&logoColor=white)](https://github.com/armin0411/armin-launcher/archive/refs/heads/main.zip)
 
@@ -17,13 +17,18 @@
 
 ### Requirements
 - **Python 3.12+** (standard library only)
-- **Chromium** (or Chromium-based browser) for the desktop UI
-- Optional for Arch Linux package installs: `pacman`, `pkexec`, and `yay` or `paru` for AUR entries
+- **Linux**: Chromium-based browser (`chromium`, `google-chrome`, `brave`); optional `pacman`, `pkexec`, and `yay` or `paru` for Arch/AUR entries
+- **Windows**: Microsoft Edge (preinstalled on Windows 10/11) or Chrome/Brave; optional `winget` (built into Windows 11) for winget entries
 
 ### Run directly
-```sh
-python3 launcher.py
-```
+- **Linux**:
+  ```sh
+  python3 launcher.py
+  ```
+- **Windows**: Double-click `ArminLauncher.pyw` (runs without a console window) or run:
+  ```bat
+  python launcher.py
+  ```
 
 ### Install desktop shortcut (optional)
 Registers a per-user `.desktop` entry and `~/.local/bin` wrappers without touching system keybindings:
