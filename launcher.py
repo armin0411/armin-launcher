@@ -1003,6 +1003,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_header('Cache-Control', 'public, max-age=86400')
             self.end_headers()
             self.wfile.write(body)
+        elif m := re.fullmatch(r'/shots/([a-z0-9-]+)\.(png|jpg|jpeg|webp)', path):
+            file = ROOT / 'ui' / 'shots' / f'{m.group(1)}.{m.group(2)}'
+            if not file.is_file():
+                self.json(404, {'error': 'Not found'})
+                return
+            body = file.read_bytes()
+            ctype = {'png': 'image/png', 'webp': 'image/webp'}.get(m.group(2), 'image/jpeg')
+            self.send_response(200)
+            self.send_header('Content-Type', ctype)
+            self.send_header('Content-Length', str(len(body)))
+            self.send_header('X-Content-Type-Options', 'nosniff')
+            self.send_header('Cache-Control', 'public, max-age=86400')
+            self.end_headers()
+            self.wfile.write(body)
         else:
             self.json(404, {'error': 'Not found'})
 

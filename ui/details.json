@@ -26,11 +26,11 @@
     "shots": [
       {
         "caption": "Curves and type layers",
-        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/photocraft/demo.jpg"
+        "url": "/shots/photocraft-1.jpg"
       },
       {
         "caption": "Levels with a live histogram",
-        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/photocraft/adjustments.jpg"
+        "url": "/shots/photocraft-2.jpg"
       }
     ]
   },
@@ -65,11 +65,11 @@
     "shots": [
       {
         "caption": "The Neon Drive poster",
-        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/vectorcraft/neon.jpg"
+        "url": "/shots/vectorcraft-1.jpg"
       },
       {
         "caption": "Live blends",
-        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/vectorcraft/ribbons.jpg"
+        "url": "/shots/vectorcraft-2.jpg"
       }
     ]
   },
@@ -104,11 +104,11 @@
     "shots": [
       {
         "caption": "The Color workspace, with scopes",
-        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/filmcraft/color.jpg"
+        "url": "/shots/filmcraft-1.jpg"
       },
       {
         "caption": "The Assembly workspace",
-        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/filmcraft/assembly.jpg"
+        "url": "/shots/filmcraft-2.jpg"
       }
     ]
   },
@@ -143,11 +143,11 @@
     "shots": [
       {
         "caption": "The Edit view",
-        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/lightcraft/hero.jpg"
+        "url": "/shots/lightcraft-1.jpg"
       },
       {
         "caption": "The tone curve",
-        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/lightcraft/curve.jpg"
+        "url": "/shots/lightcraft-2.jpg"
       }
     ]
   },
@@ -212,11 +212,11 @@
     "shots": [
       {
         "caption": "An animated composition",
-        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/effectcraft/hero.jpg"
+        "url": "/shots/effectcraft-1.jpg"
       },
       {
         "caption": "The Graph Editor",
-        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/effectcraft/graph.jpg"
+        "url": "/shots/effectcraft-2.jpg"
       }
     ]
   },
@@ -281,7 +281,7 @@
     "shots": [
       {
         "caption": "A magazine spread with a threaded story",
-        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/designcraft/spread.jpg"
+        "url": "/shots/designcraft-1.jpg"
       }
     ]
   },
@@ -346,11 +346,11 @@
     "shots": [
       {
         "caption": "The Home tab and the Navigation pane",
-        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/wordcraft/hero.jpg"
+        "url": "/shots/wordcraft-1.jpg"
       },
       {
         "caption": "Track Changes and comments",
-        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/wordcraft/review.jpg"
+        "url": "/shots/wordcraft-2.jpg"
       }
     ]
   },
@@ -377,11 +377,11 @@
     "shots": [
       {
         "caption": "The Edit window with a nine-track session",
-        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/soundcraft/edit.jpg"
+        "url": "/shots/soundcraft-1.jpg"
       },
       {
         "caption": "The Mix window",
-        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/soundcraft/mix.jpg"
+        "url": "/shots/soundcraft-2.jpg"
       }
     ]
   },
@@ -416,11 +416,11 @@
     "shots": [
       {
         "caption": "Editing a slide, with sections and notes",
-        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/deckcraft/editor.jpg"
+        "url": "/shots/deckcraft-1.jpg"
       },
       {
         "caption": "The Shape Format tab",
-        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/deckcraft/shape.jpg"
+        "url": "/shots/deckcraft-2.jpg"
       }
     ]
   },
@@ -451,11 +451,11 @@
     "shots": [
       {
         "caption": "An apartment floor plan",
-        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/cadcraft/apartment.jpg"
+        "url": "/shots/cadcraft-1.jpg"
       },
       {
         "caption": "A mechanical bracket drawing",
-        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/cadcraft/bracket.jpg"
+        "url": "/shots/cadcraft-2.jpg"
       }
     ]
   },
@@ -490,11 +490,11 @@
     "shots": [
       {
         "caption": "A quarterly sales dashboard",
-        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/gridcraft/hero.jpg"
+        "url": "/shots/gridcraft-1.jpg"
       },
       {
         "caption": "A household budget",
-        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/gridcraft/budget.jpg"
+        "url": "/shots/gridcraft-2.jpg"
       }
     ]
   },
@@ -637,7 +637,7 @@
     "shots": [
       {
         "caption": "Blender splash & 3D suite",
-        "url": "https://raw.githubusercontent.com/blender/blender/main/release/datafiles/splash.png"
+        "url": "/shots/blender-1.png"
       }
     ]
   },
