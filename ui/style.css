@@ -1,9 +1,10 @@
 :root {
   color-scheme: dark;
-  --bg: #121316;
+  --bg: #1a1c22;
+  --canvas-end: #15171c;
   --sunken: #060607;
-  --surface: #18191d;
-  --hover: #202126;
+  --surface: #121317;
+  --hover: #22252d;
   --ink: #f4f4f6;
   --ink-soft: #b4b7c2;
   --strong: #ffffff;
@@ -24,7 +25,8 @@
 
 body {
   margin: 0;
-  background: var(--bg);
+  background: linear-gradient(135deg, var(--bg), var(--canvas-end, var(--bg)));
+  background-attachment: fixed;
   color: var(--ink);
   font-size: 13.5px;
   font-weight: 500;
@@ -33,6 +35,7 @@ body {
 body.light {
   color-scheme: light;
   --bg: #f2f1ee;
+  --canvas-end: #eae9e5;
   --sunken: #e7e6e2;
   --surface: #faf9f6;
   --hover: #eae9e5;
@@ -1212,4 +1215,65 @@ dialog#lightbox::backdrop {
 }
 #lightbox-img.zoomed {
   cursor: zoom-out;
+}
+
+/* ArminCalendar-inspired Theme Picker & Center-Out Diagonal Reveal */
+.theme-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  max-height: 56vh;
+  overflow-y: auto;
+}
+.theme-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  text-align: left;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.theme-option:hover,
+.theme-option.selected {
+  background: var(--hover);
+  border-color: var(--accent);
+  color: var(--strong);
+}
+.theme-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.theme-swatches {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.theme-swatches i {
+  display: block;
+  width: 11px;
+  height: 16px;
+}
+#theme-wipe {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0;
+}
+#theme-wipe.active {
+  animation: theme-reveal .38s cubic-bezier(0, 0, .58, 1) forwards;
+}
+@keyframes theme-reveal {
+  0% {
+    opacity: .85;
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+  }
+  100% {
+    opacity: 0;
+    clip-path: polygon(45% 0, 55% 0, 55% 100%, 45% 100%);
+  }
+}
+@media(max-width: 620px) {
+  .theme-list { grid-template-columns: 1fr; }
 }

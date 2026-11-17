@@ -1201,9 +1201,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                             raise ValueError('view must be grid or list')
                         prefs['view'] = data['view']
                     if 'theme' in data:
-                        if data['theme'] not in ('dark', 'light'):
-                            raise ValueError('theme must be dark or light')
-                        prefs['theme'] = data['theme']
+                        t = str(data['theme']).strip()
+                        if not re.fullmatch(r'[a-z0-9-]+', t):
+                            raise ValueError('invalid theme')
+                        prefs['theme'] = t
                     if 'zoom' in data:
                         z = float(data['zoom'])
                         if not 0.75 <= z <= 1.75:

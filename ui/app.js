@@ -29,15 +29,124 @@ function savePref(patch) {
   if (!token) return;
   fetch('/api/prefs', {method: 'POST', headers: {'Content-Type':'application/json', 'X-LaunchCraft-Token': token}, body: JSON.stringify(patch)}).catch(() => {});
 }
+const THEMES = [
+  {id:'default', name:'Default Dark', light:false, bg:'#1a1c22', canvasEnd:'#15171c', surface:'#121317', sunken:'#060607', hover:'#202229', ink:'#f4f4f6', inkSoft:'#b4b7c2', strong:'#ffffff', muted:'#93949d', line:'#33343b', accent:'#2d81ff', green:'#7bd5a7', red:'#ff817e'},
+  {id:'light', name:'Default Light', light:true, bg:'#f2f1ee', canvasEnd:'#eae9e5', surface:'#faf9f6', sunken:'#e7e6e2', hover:'#eae9e5', ink:'#1e1f24', inkSoft:'#494b54', strong:'#060607', muted:'#62636c', line:'#cdcdc8', accent:'#2d81ff', green:'#167846', red:'#b32327'},
+  {id:'catppuccin', name:'Catppuccin Mocha', light:false, bg:'#342941', canvasEnd:'#242945', surface:'#242133', sunken:'#1a1828', hover:'#373148', ink:'#f2e7fc', inkSoft:'#dcd0eb', strong:'#ffffff', muted:'#cbbfd8', line:'#4a415c', accent:'#d8b5ff', green:'#ade4bc', red:'#f7b1c2'},
+  {id:'nord', name:'Nord', light:false, bg:'#2e3440', canvasEnd:'#252b37', surface:'#232832', sunken:'#1b1f27', hover:'#3b4252', ink:'#eceff4', inkSoft:'#d8dee9', strong:'#ffffff', muted:'#aeb8cc', line:'#434c5e', accent:'#88c0d0', green:'#a3be8c', red:'#bf616a'},
+  {id:'gruvbox', name:'Gruvbox', light:false, bg:'#2c2923', canvasEnd:'#26231e', surface:'#24211c', sunken:'#1c1c18', hover:'#393328', ink:'#faebca', inkSoft:'#e6d2a9', strong:'#fff6e0', muted:'#cabb9c', line:'#544938', accent:'#f3bb61', green:'#b9ca79', red:'#ffa492'},
+  {id:'tokyo-night', name:'Tokyo Night', light:false, bg:'#192e43', canvasEnd:'#2b213f', surface:'#182033', sunken:'#14192a', hover:'#263047', ink:'#e8edff', inkSoft:'#cad5f2', strong:'#ffffff', muted:'#b8c5e3', line:'#384763', accent:'#a7c5ff', green:'#a7d598', red:'#ffafb9'},
+  {id:'dracula', name:'Dracula', light:false, bg:'#332338', canvasEnd:'#202134', surface:'#241c2d', sunken:'#1b1723', hover:'#382b40', ink:'#fff0fa', inkSoft:'#ebd6e6', strong:'#ffffff', muted:'#cfbcd2', line:'#513951', accent:'#e9a1f2', green:'#8ee6ae', red:'#ffa0aa'},
+  {id:'miasma', name:'Miasma', light:false, bg:'#332f20', canvasEnd:'#202e25', surface:'#252b20', sunken:'#1a2119', hover:'#353b2c', ink:'#f2edd1', inkSoft:'#d9cba5', strong:'#fffbe6', muted:'#cccdb9', line:'#484e39', accent:'#c8d282', green:'#b6d4ab', red:'#f4bfb2'},
+  {id:'vscode-dark', name:'VS Code Dark', light:false, bg:'#19212c', canvasEnd:'#19212c', surface:'#141d28', sunken:'#101822', hover:'#222f3d', ink:'#edf4fb', inkSoft:'#c4d4e2', strong:'#ffffff', muted:'#b5c6d5', line:'#354455', accent:'#8acbff', green:'#91d4a8', red:'#ffb0a4'},
+  {id:'solarized-dark', name:'Solarized Dark', light:false, bg:'#07323a', canvasEnd:'#07323a', surface:'#062a30', sunken:'#03232a', hover:'#0e3c44', ink:'#f4eed8', inkSoft:'#d8d3bf', strong:'#fdf8e6', muted:'#a3b8b6', line:'#235056', accent:'#2aa198', green:'#859900', red:'#dc322f'},
+  {id:'catppuccin-latte', name:'Catppuccin Latte', light:true, bg:'#fbf0ef', canvasEnd:'#e8e8f8', surface:'#f6f2fa', sunken:'#ede8f3', hover:'#e8dff2', ink:'#40334f', inkSoft:'#554564', strong:'#251b30', muted:'#63546f', line:'#d8cfe2', accent:'#773999', green:'#336444', red:'#9a374d'},
+  {id:'nord-light', name:'Nord Light', light:true, bg:'#f2f8fa', canvasEnd:'#e0ebf2', surface:'#f1f6f9', sunken:'#e5edf2', hover:'#dae7ef', ink:'#22384b', inkSoft:'#354f63', strong:'#112230', muted:'#4a6171', line:'#c3d4df', accent:'#176479', green:'#406745', red:'#a43648'},
+  {id:'gruvbox-light', name:'Gruvbox Light', light:true, bg:'#f9edcd', canvasEnd:'#f9edcd', surface:'#f8f0db', sunken:'#f0e2c1', hover:'#edddb7', ink:'#413321', inkSoft:'#57442e', strong:'#261d12', muted:'#69563d', line:'#dacba9', accent:'#8a471c', green:'#4e601c', red:'#a13224'},
+  {id:'tokyo-day', name:'Tokyo Day', light:true, bg:'#e9f4fc', canvasEnd:'#eee7fa', surface:'#f1f3fc', sunken:'#e5e9f7', hover:'#dfe6fa', ink:'#293956', inkSoft:'#435271', strong:'#141e33', muted:'#515e75', line:'#c9d2e7', accent:'#3b54a6', green:'#366744', red:'#a13853'},
+  {id:'vscode-light', name:'VS Code Light', light:true, bg:'#f7f9fc', canvasEnd:'#f7f9fc', surface:'#f3f6fb', sunken:'#e9eef5', hover:'#e0eaf7', ink:'#1d3048', inkSoft:'#364c65', strong:'#0d1929', muted:'#4e6277', line:'#cdd8e6', accent:'#075da7', green:'#266637', red:'#b32f35'},
+  {id:'miasma-light', name:'Miasma Light', light:true, bg:'#f6f1db', canvasEnd:'#e6eddc', surface:'#f1f2e3', sunken:'#e5e8d4', hover:'#e1e5c9', ink:'#353a25', inkSoft:'#4e543a', strong:'#1f2314', muted:'#575d45', line:'#cdd3b8', accent:'#4c6121', green:'#356449', red:'#973e34'},
+];
+let currentTheme = localStorage.getItem('launchcraft-theme') || 'default';
+if (!THEMES.some(t => t.id === currentTheme)) currentTheme = currentTheme === 'dark' ? 'default' : 'default';
+
+function applyTheme(id, animate = true, persist = true) {
+  const t = THEMES.find(x => x.id === id) || THEMES[0];
+  const prevBg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#1a1c22';
+  const prevEnd = getComputedStyle(document.documentElement).getPropertyValue('--canvas-end').trim() || prevBg;
+  if (animate && currentTheme !== t.id && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    let wipe = $('#theme-wipe');
+    if (!wipe) {
+      wipe = document.createElement('div');
+      wipe.id = 'theme-wipe';
+      document.body.appendChild(wipe);
+    }
+    wipe.style.background = `linear-gradient(135deg, ${prevBg}, ${prevEnd})`;
+    wipe.classList.remove('active');
+    void wipe.offsetWidth;
+    wipe.classList.add('active');
+  }
+  currentTheme = t.id;
+  document.body.classList.toggle('light', t.light);
+  const root = document.documentElement.style;
+  if (t.id === 'default' || t.id === 'light') {
+    ['--bg','--canvas-end','--surface','--sunken','--hover','--ink','--ink-soft','--strong','--muted','--line','--accent','--green','--red'].forEach(k => root.removeProperty(k));
+  } else {
+    root.setProperty('--bg', t.bg);
+    root.setProperty('--canvas-end', t.canvasEnd);
+    root.setProperty('--surface', t.surface);
+    root.setProperty('--sunken', t.sunken);
+    root.setProperty('--hover', t.hover);
+    root.setProperty('--ink', t.ink);
+    root.setProperty('--ink-soft', t.inkSoft);
+    root.setProperty('--strong', t.strong);
+    root.setProperty('--muted', t.muted);
+    root.setProperty('--line', t.line);
+    root.setProperty('--accent', t.accent);
+    root.setProperty('--green', t.green);
+    root.setProperty('--red', t.red);
+  }
+  localStorage.setItem('launchcraft-theme', t.id);
+  if (persist) savePref({theme: t.id});
+}
+
+function openThemePicker() {
+  const saved = currentTheme;
+  let idx = Math.max(0, THEMES.findIndex(t => t.id === currentTheme));
+  const listHTML = THEMES.map((t, i) => `
+    <button type="button" class="theme-option ${i === idx ? 'selected' : ''}" data-idx="${i}" data-theme-id="${t.id}">
+      <span class="theme-swatches" aria-hidden="true">
+        <i style="background:${t.bg}"></i><i style="background:${t.surface}"></i><i style="background:${t.ink}"></i><i style="background:${t.accent}"></i>
+      </span>
+      <span class="theme-name">${escapeHTML(t.name)}</span>
+      <span class="badge">${t.light ? 'LIGHT' : 'DARK'}</span>
+    </button>`).join('');
+  showModal('Choose theme', `<p class="muted" style="margin:0 0 12px">Hover or use arrow keys to preview. Press Enter or click to apply.</p><div class="theme-list" id="theme-list">${listHTML}</div>`);
+  const list = $('#theme-list');
+  let committed = false;
+  const selectIdx = (nextIdx, animate = true) => {
+    idx = (nextIdx + THEMES.length) % THEMES.length;
+    $$('.theme-option', list).forEach((b, i) => b.classList.toggle('selected', i === idx));
+    const btn = list.children[idx];
+    btn?.scrollIntoView({block: 'nearest'});
+    applyTheme(THEMES[idx].id, animate, false);
+  };
+  list.addEventListener('mouseover', event => {
+    const btn = event.target.closest('.theme-option');
+    if (!btn) return;
+    const i = Number(btn.dataset.idx);
+    if (i !== idx) selectIdx(i, false);
+  });
+  list.addEventListener('click', event => {
+    const btn = event.target.closest('.theme-option');
+    if (!btn) return;
+    committed = true;
+    applyTheme(THEMES[Number(btn.dataset.idx)].id, true, true);
+    $('#modal').close();
+  });
+  const onKey = event => {
+    if (!$('#modal').open || !$('#theme-list')) return;
+    if (event.key === 'ArrowDown') { event.preventDefault(); selectIdx(idx + 1, false); }
+    else if (event.key === 'ArrowUp') { event.preventDefault(); selectIdx(idx - 1, false); }
+    else if (event.key === 'Home') { event.preventDefault(); selectIdx(0, false); }
+    else if (event.key === 'End') { event.preventDefault(); selectIdx(THEMES.length - 1, false); }
+    else if (event.key === 'Enter') { event.preventDefault(); committed = true; applyTheme(THEMES[idx].id, true, true); $('#modal').close(); }
+  };
+  document.addEventListener('keydown', onKey);
+  $('#modal').addEventListener('close', () => {
+    document.removeEventListener('keydown', onKey);
+    if (!committed) applyTheme(saved, false, false);
+  }, {once: true});
+}
+
 function applyState(next) {
   if ((next.revision || 0) < (state.revision || 0)) return;
   state = next;
   if (!prefsLoaded && next.prefs) {
     prefsLoaded = true;
     if (next.prefs.view === 'list' || next.prefs.view === 'grid') setView(next.prefs.view, false);
-    if (next.prefs.theme === 'light' || next.prefs.theme === 'dark') {
-      document.body.classList.toggle('light', next.prefs.theme === 'light');
-      localStorage.setItem('launchcraft-theme', next.prefs.theme);
+    if (typeof next.prefs.theme === 'string' && THEMES.some(t => t.id === next.prefs.theme)) {
+      applyTheme(next.prefs.theme, false, false);
     }
     if (typeof next.prefs.zoom === 'number') applyZoom(next.prefs.zoom, false);
     if (Array.isArray(next.prefs.profiles) && next.prefs.profiles.length) {
@@ -427,13 +536,8 @@ $('#list-view').onclick = () => setView('list');
 $('#zoom-out').onclick = () => applyZoom(zoom - .1);
 $('#zoom-in').onclick = () => applyZoom(zoom + .1);
 $('#zoom-reset').onclick = () => applyZoom(1);
-$('#theme').onclick = () => {
-  document.body.classList.toggle('light');
-  const theme = document.body.classList.contains('light') ? 'light' : 'dark';
-  localStorage.setItem('launchcraft-theme', theme);
-  savePref({theme});
-};
-if (localStorage.getItem('launchcraft-theme') === 'light') document.body.classList.add('light');
+$('#theme').onclick = openThemePicker;
+applyTheme(currentTheme, false, false);
 $('#add').onclick = addApp;
 function manageProfiles() {
   const listHTML = () => profiles.map((p, i) => `<div class="profile-row"><span>${PROFILE_ICONS[p.kind] || PROFILE_ICONS.custom}</span><strong>${escapeHTML(p.label)}</strong><span class="muted profile-url">${escapeHTML(p.url)}</span>${profiles.length > 1 ? `<button type="button" data-remove="${i}">Remove</button>` : ''}</div>`).join('');

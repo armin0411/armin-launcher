@@ -150,8 +150,10 @@ def main():
             (output / 'list.png').write_bytes(base64.b64decode(screenshot['data']))
             click('#grid-view')
             click('#theme')
+            click('[data-theme-id=vscode-light]')
             assert cdp.evaluate("document.body.classList.contains('light')")
             click('#theme')
+            click('[data-theme-id=default]')
             for key, code, modifiers, expected in [('+','Equal',2,1.1), ('-','Minus',2,1), ('=','Equal',4,1.1), ('0','Digit0',4,1)]:
                 result = cdp.evaluate(f"(() => {{const e = new KeyboardEvent('keydown',{{key:{json.dumps(key)},code:{json.dumps(code)},ctrlKey:{str(modifiers == 2).lower()},metaKey:{str(modifiers == 4).lower()},cancelable:true}}); document.dispatchEvent(e); return [e.defaultPrevented, zoom];}})()")
                 assert result == [True, expected], result
