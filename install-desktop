@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+"""Install per-user desktop integration; never changes desktop keybindings."""
+from pathlib import Path
+import shlex
+import shutil
+import subprocess
+
+root = Path(__file__).resolve().parent
+home = Path.home()
+bin_dir = home / '.local/bin'
+applications = home / '.local/share/applications'
+icons = home / '.local/share/icons/hicolor/scalable/apps'
+for directory in (bin_dir, applications, icons):
+    directory.mkdir(parents=True, exist_ok=True)
+for name, target in [('launchcraft', 'launcher.py'), ('launchcraft-ctl', 'launchcraft-ctl')]:
+    wrapper = bin_dir / name
+    wrapper.write_text('#!/bin/sh\nexec python3 ' + shlex.quote(str(root / target)) + ' "$@"\n')
+    wrapper.chmod(0o755)
+shutil.copyfile(root / 'launchcraft.svg', icons / 'launchcraft.svg')
+entry = applications / 'LaunchCraft.desktop'
+entry.write_text('[Desktop Entry]\nVersion=1.0\nType=Application\nName=LaunchCraft\nComment=Your software, ready to go\nExec=' + str(bin_dir / 'launchcraft') + '\nIcon=launchcraft\nTerminal=false\nCategories=System;Utility;\nStartupWMClass=LaunchCraft\nKeywords=Apps;Launcher;Updates;Software;\n')
+if shutil.which('update-desktop-database'):
+    subprocess.run(['update-desktop-database', str(applications)], check=False)
+if shutil.which('gtk-update-icon-cache'):
+    subprocess.run(['gtk-update-icon-cache', '-f', '-t', str(home / '.local/share/icons/hicolor')], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+print(f'Installed {entry}')
+print('Open SUPER+Space and search LaunchCraft.')
