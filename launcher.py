@@ -141,7 +141,7 @@ class Engine:
             self.state = json.loads(self.state_path.read_text())
         except (OSError, ValueError):
             self.state = {}
-        for key in ('installed', 'releases', 'http'):
+        for key in ('installed', 'releases', 'http', 'prefs'):
             self.state.setdefault(key, {})
         self.api_base, self.web_base = api_base.rstrip('/'), web_base.rstrip('/')
         self.listeners = set()
@@ -230,7 +230,7 @@ class Engine:
                 app['job'] = self.jobs.get(app['id'])
                 app['verification'] = self.state['installed'].get(app['id'], {}).get('verification')
                 app['icon'] = self.icon_url(app['id'])
-            return dict(apps=apps, busy=self.busy, refreshing=self.refreshing, notice=self.notice, last_error=self.last_error, warnings=self.warnings, revision=time.monotonic())
+            return dict(apps=apps, busy=self.busy, refreshing=self.refreshing, notice=self.notice, last_error=self.last_error, warnings=self.warnings, prefs=copy.deepcopy(self.state.get('prefs', {})), revision=time.monotonic())
 
     def newer(self, latest, installed):
         if installed == 'unknown':
@@ -820,6 +820,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 engine.notice = 'Cancellation requested. Active package transactions finish safely.'
             elif path == '/api/open':
                 engine.open_app(data['id'])
+            elif path == '/api/prefs':
+                with engine.lock:
+                    prefs = engine.state.setdefault('prefs', {})
+                    if 'view' in data:
+                        if data['view'] not in ('grid', 'list'):
+                            raise ValueError('view must be grid or list')
+                        prefs['view'] = data['view']
+                    if 'theme' in data:
+                        if data['theme'] not in ('dark', 'light'):
+                            raise ValueError('theme must be dark or light')
+                        prefs['theme'] = data['theme']
+                    if 'zoom' in data:
+                        z = float(data['zoom'])
+                        if not 0.75 <= z <= 1.75:
+                            raise ValueError('zoom out of range')
+                        prefs['zoom'] = round(z, 2)
+                    engine.save()
+                self.json(200, {'ok': True})
+                return
             elif path == '/api/uninstall':
                 if not engine.app(data['id']):
                     raise ValueError('Unknown app ID')

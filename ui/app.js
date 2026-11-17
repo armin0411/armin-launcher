@@ -2,14 +2,27 @@
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let state = {apps: [], busy: false}, token = '', filter = 'all';
+let state = {apps: [], busy: false}, token = '', filter = 'all', prefsLoaded = false;
 let view = localStorage.getItem('launchcraft-view') === 'list' ? 'list' : 'grid';
 let zoom = Math.max(.75, Math.min(1.75, Number(localStorage.getItem('launchcraft-zoom')) || 1));
 let events;
 const terminal = ['Complete', 'Cancelled', 'Error'];
+function savePref(patch) {
+  if (!token) return;
+  fetch('/api/prefs', {method: 'POST', headers: {'Content-Type':'application/json', 'X-LaunchCraft-Token': token}, body: JSON.stringify(patch)}).catch(() => {});
+}
 function applyState(next) {
   if ((next.revision || 0) < (state.revision || 0)) return;
   state = next;
+  if (!prefsLoaded && next.prefs) {
+    prefsLoaded = true;
+    if (next.prefs.view === 'list' || next.prefs.view === 'grid') setView(next.prefs.view, false);
+    if (next.prefs.theme === 'light' || next.prefs.theme === 'dark') {
+      document.body.classList.toggle('light', next.prefs.theme === 'light');
+      localStorage.setItem('launchcraft-theme', next.prefs.theme);
+    }
+    if (typeof next.prefs.zoom === 'number') applyZoom(next.prefs.zoom, false);
+  }
   render();
 }
 function setNotice(message, error = false) {
@@ -23,19 +36,21 @@ async function api(path, data = {}) {
   applyState(result);
   return result;
 }
-function applyZoom(value) {
+function applyZoom(value, persist = true) {
   zoom = Math.round(Math.max(.75, Math.min(1.75, value)) * 100) / 100;
   document.documentElement.style.setProperty('--zoom', zoom);
   localStorage.setItem('launchcraft-zoom', zoom);
   $('#zoom-reset').textContent = Math.round(zoom * 100) + '%';
   $('#zoom-out').disabled = zoom <= .75;
   $('#zoom-in').disabled = zoom >= 1.75;
+  if (persist) savePref({zoom});
 }
-function setView(value) {
+function setView(value, persist = true) {
   view = value;
   localStorage.setItem('launchcraft-view', view);
   $('#grid-view').setAttribute('aria-pressed', String(view === 'grid'));
   $('#list-view').setAttribute('aria-pressed', String(view === 'list'));
+  if (persist) savePref({view});
   renderApps();
 }
 function versions(a) {
@@ -225,15 +240,20 @@ $('#list-view').onclick = () => setView('list');
 $('#zoom-out').onclick = () => applyZoom(zoom - .1);
 $('#zoom-in').onclick = () => applyZoom(zoom + .1);
 $('#zoom-reset').onclick = () => applyZoom(1);
-$('#theme').onclick = () => {document.body.classList.toggle('light'); localStorage.setItem('launchcraft-theme', document.body.classList.contains('light') ? 'light' : 'dark');};
+$('#theme').onclick = () => {
+  document.body.classList.toggle('light');
+  const theme = document.body.classList.contains('light') ? 'light' : 'dark';
+  localStorage.setItem('launchcraft-theme', theme);
+  savePref({theme});
+};
 if (localStorage.getItem('launchcraft-theme') === 'light') document.body.classList.add('light');
 $('#add').onclick = addApp;
 $('#modal-close').onclick = () => $('#modal').close();
 $('#modal').addEventListener('click', event => {if (event.target === $('#modal')) {const r = $('#modal').getBoundingClientRect(); if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) $('#modal').close();}});
 $('#refresh').onclick = async () => {try {await api('refresh');} catch (e) {setNotice(e.message,true);}};
 $('#update-all').onclick = async () => {try {await api('install');} catch (e) {setNotice(e.message,true);}};
-applyZoom(zoom);
-setView(view);
+applyZoom(zoom, false);
+setView(view, false);
 async function connect() {
   try {
     events = new EventSource('/events');
