@@ -943,6 +943,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         if not 0.75 <= z <= 1.75:
                             raise ValueError('zoom out of range')
                         prefs['zoom'] = round(z, 2)
+                    if 'profiles' in data:
+                        profs = data['profiles']
+                        if not isinstance(profs, list) or len(profs) > 20:
+                            raise ValueError('profiles must be a list of up to 20 items')
+                        cleaned = []
+                        for item in profs:
+                            if not isinstance(item, dict):
+                                raise ValueError('profile must be an object')
+                            label = str(item.get('label', '')).strip()
+                            url = str(item.get('url', '')).strip()
+                            kind = str(item.get('kind', 'github')).strip().lower()
+                            u = urllib.parse.urlparse(url)
+                            if not label or u.scheme not in ('https', 'http') or not u.netloc:
+                                raise ValueError('profile requires label and http(s) url')
+                            if kind not in ('github', 'website', 'x', 'discord', 'youtube', 'linkedin', 'custom'):
+                                kind = 'custom'
+                            cleaned.append({'label': label[:60], 'url': url[:300], 'kind': kind})
+                        prefs['profiles'] = cleaned
                     engine.save()
                 self.json(200, {'ok': True})
                 return
