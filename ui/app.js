@@ -141,12 +141,15 @@ function renderApps() {
     return [a.name, a.publisher, a.category, a.tagline, a.id].join(' ').toLocaleLowerCase().includes(query);
   });
   const sort = $('#sort').value;
-  apps.sort((a,b) => (sort === 'updates' ? Number(b.update) - Number(a.update) : sort === 'category' ? a.category.localeCompare(b.category) : 0) || a.name.localeCompare(b.name));
-  shownApps = apps;
+  const cmp = (a,b) => (sort === 'updates' ? Number(b.update) - Number(a.update) : sort === 'category' ? a.category.localeCompare(b.category) : 0) || a.name.localeCompare(b.name);
+  apps.sort(cmp);
+  const split = filter === 'all';
+  const installedList = split ? apps.filter(a => a.installed) : apps;
+  const uninstalledList = split ? apps.filter(a => !a.installed) : [];
+  shownApps = split ? [...installedList, ...uninstalledList] : apps;
   const container = $('#apps');
   container.className = view;
-  let html = view === 'list' && apps.length ? '<div class="table-head" aria-hidden="true"><span>APP</span><span>STATUS</span><span>CATEGORY / RELEASED</span><span>INSTALLED → LATEST</span><span style="text-align:right">ACTION</span><span></span></div>' : '';
-  html += apps.map(a => {
+  const renderCard = a => {
     const accent = /^#[0-9a-f]{6}$/i.test(a.accent) ? a.accent : '#2d81ff';
     const badge = `<span class="badge">${escapeHTML(a.category)}</span>`;
     const released = formatReleased(a);
@@ -157,7 +160,15 @@ function renderApps() {
       ? `<div class="card-inner">${appIdentity(a, true)}<div class="status-cell">${statusBadge(a)}</div><div class="category-cell">${badge}<span class="publisher">${escapeHTML(released || a.publisher)}</span></div>${versions(a)}<div class="list-action">${action(a)}</div>${menu(a)}</div>`
       : `<div class="card-inner"><div class="app-top">${appIdentity(a, false).replace(/^<div class="app-top">|<\/div>$/g,'')}${menu(a)}</div>${tagline}${releasedLine}<div class="app-meta">${badge}${versions(a)}</div></div><div class="card-bottom">${statusBadge(a)}${action(a)}</div>`;
     return `<article class="card ${cardState}" data-id="${escapeHTML(a.id)}" style="--app-accent:${accent}">${content}</article>`;
-  }).join('');
+  };
+  let html = view === 'list' && shownApps.length ? '<div class="table-head" aria-hidden="true"><span>APP</span><span>STATUS</span><span>CATEGORY / RELEASED</span><span>INSTALLED → LATEST</span><span style="text-align:right">ACTION</span><span></span></div>' : '';
+  if (split && installedList.length && uninstalledList.length) {
+    html += installedList.map(renderCard).join('');
+    html += `<div class="section-divider" aria-label="Not installed"><span>NOT INSTALLED</span><span>${uninstalledList.length}</span></div>`;
+    html += uninstalledList.map(renderCard).join('');
+  } else {
+    html += shownApps.map(renderCard).join('');
+  }
   container.innerHTML = html;
   $('#empty').hidden = apps.length !== 0;
 }

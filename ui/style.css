@@ -242,6 +242,26 @@ main.grid {
   gap: 12px;
   padding: 0 0 24px;
 }
+.section-divider {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  color: var(--muted);
+  padding: 8px 2px 4px;
+  margin-top: 6px;
+  border-bottom: 1px solid var(--line);
+}
+main.list .section-divider {
+  padding: 10px 16px;
+  margin-top: 10px;
+  background: var(--sunken);
+  border: 1px solid var(--line);
+}
 .card {
   background: var(--surface);
   border: 1px solid var(--line);
