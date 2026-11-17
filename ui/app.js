@@ -711,33 +711,70 @@ $('#refresh').onclick = async () => {
 };
 function openAiMaintain() {
   const defaults = {
-    openai: {model: 'gpt-4o-mini', placeholder: 'sk-...'},
-    anthropic: {model: 'claude-3-5-haiku-latest', placeholder: 'sk-ant-...'},
-    gemini: {model: 'gemini-2.5-flash', placeholder: 'AIza...'},
-    openrouter: {model: 'openai/gpt-4o-mini', placeholder: 'sk-or-...'},
-    custom: {model: 'llama3.2', placeholder: 'Optional for local (e.g. Ollama)'},
+    openai: {models: ['gpt-4o-mini', 'gpt-4o', 'o4-mini', 'gpt-4.1-mini', 'gpt-4.1'], placeholder: 'sk-...'},
+    anthropic: {models: ['claude-3-5-haiku-latest', 'claude-sonnet-4-20250514', 'claude-3-7-sonnet-latest'], placeholder: 'sk-ant-...'},
+    gemini: {models: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'], placeholder: 'AIza...'},
+    openrouter: {models: ['openai/gpt-4o-mini', 'anthropic/claude-3.5-sonnet', 'google/gemini-2.5-flash'], placeholder: 'sk-or-...'},
+    custom: {models: ['llama3.2', 'qwen2.5', 'mistral'], placeholder: 'Optional for local (e.g. Ollama)'},
   };
-  showModal('AI Maintain (Hybrid)', `<p class="muted" style="margin:0 0 14px">Python gathers live GitHub/AUR release facts and checks local icons/screenshots, then your chosen AI proposes validated updates.</p><form id="ai-form" class="form-grid"><label>AI Provider<select name="provider"><option value="openai">OpenAI (ChatGPT)</option><option value="anthropic">Anthropic (Claude)</option><option value="gemini">Google Gemini</option><option value="openrouter">OpenRouter</option><option value="custom">Custom / Local (Ollama, etc.)</option></select></label><label>Model<input name="model" required value="gpt-4o-mini"></label><label class="full" id="ai-base-wrap" hidden>Base URL <span class="field-hint">(e.g. http://localhost:11434/v1)</span><input name="base_url" placeholder="http://localhost:11434/v1"></label><label class="full">API Key <span class="field-hint" id="ai-key-hint"></span><input name="api_key" type="password" placeholder="sk-..."></label><label class="full">App to add or check <span class="field-hint">(optional)</span><input name="prompt" placeholder="Leave blank for full catalog audit, or e.g. Zed"></label><label class="checkbox full"><input name="push" type="checkbox"> Run unit tests &amp; push changes to GitHub if updated</label><div class="modal-actions full"><button type="button" id="ai-cancel">Close</button><button type="submit" class="primary">Run AI Maintain</button></div></form><pre id="ai-log" class="release-notes" style="margin-top:14px">${escapeHTML(state.ai_report || 'Ready.')}</pre>`);
+  showModal('AI Maintain (Hybrid)', `<p class="muted" style="margin:0 0 14px">Python gathers live GitHub/AUR release facts and checks local icons/screenshots, then your chosen AI proposes validated updates.</p><form id="ai-form" class="form-grid"><label>AI Provider<select name="provider"><option value="openai">OpenAI (ChatGPT)</option><option value="anthropic">Anthropic (Claude)</option><option value="gemini">Google Gemini</option><option value="openrouter">OpenRouter</option><option value="custom">Custom / Local (Ollama, etc.)</option></select></label><label>Model <span class="field-hint" id="ai-model-hint">(auto-updates)</span><select name="model_select"></select></label><label class="full" id="ai-custom-model-wrap" hidden>Custom Model Name<input name="model_custom" placeholder="Enter exact model ID"></label><label class="full" id="ai-base-wrap" hidden>Base URL <span class="field-hint">(e.g. http://localhost:11434/v1)</span><input name="base_url" placeholder="http://localhost:11434/v1"></label><label class="full">API Key <span class="field-hint" id="ai-key-hint"></span><input name="api_key" type="password" placeholder="sk-..."></label><label class="full">App to add or check <span class="field-hint">(optional)</span><input name="prompt" placeholder="Leave blank for full catalog audit, or e.g. Zed"></label><div class="modal-actions full"><button type="button" id="ai-refresh-models">Refresh Models</button><button type="button" id="ai-cancel">Close</button><button type="submit" class="primary">Run AI Maintain</button></div></form><pre id="ai-log" class="release-notes" style="margin-top:14px">${escapeHTML(state.ai_report || 'Ready.')}</pre>`);
   const form = $('#ai-form');
+  const populateModels = (provider, list) => {
+    const sel = form.elements.model_select;
+    const prev = sel.value;
+    const items = (Array.isArray(list) && list.length) ? list : (defaults[provider]?.models || ['gpt-4o-mini']);
+    sel.innerHTML = items.map(m => `<option value="${escapeHTML(m)}">${escapeHTML(m)}</option>`).join('') + '<option value="__custom__">Custom model…</option>';
+    if (prev && items.includes(prev)) sel.value = prev;
+    $('#ai-custom-model-wrap').hidden = sel.value !== '__custom__';
+    form.elements.model_custom.required = sel.value === '__custom__';
+  };
+  const refreshModels = async (silent = true) => {
+    const p = form.elements.provider.value;
+    const key = form.elements.api_key.value.trim();
+    const base = form.elements.base_url.value.trim();
+    if (!silent) $('#ai-model-hint').textContent = '(refreshing…)';
+    try {
+      const res = await fetch('/api/ai_models', {method: 'POST', headers: {'Content-Type':'application/json', 'X-LaunchCraft-Token': token}, body: JSON.stringify({provider: p, api_key: key, base_url: base})});
+      const data = await res.json();
+      if (res.ok && data.models?.length) {
+        state.ai_models = data.ai_models || state.ai_models;
+        populateModels(p, data.models);
+        $('#ai-model-hint').textContent = `(${data.models.length} live)`;
+      } else if (!silent) {
+        $('#ai-model-hint').textContent = '(using defaults)';
+      }
+    } catch {
+      if (!silent) $('#ai-model-hint').textContent = '(using defaults)';
+    }
+  };
   const syncProvider = () => {
     const p = form.elements.provider.value;
     const cfg = defaults[p] || defaults.openai;
     const saved = !!(state.ai_keys && state.ai_keys[p]);
-    form.elements.model.value = cfg.model;
+    populateModels(p, state.ai_models?.[p]);
     form.elements.api_key.placeholder = saved ? '•••••••• (saved locally)' : cfg.placeholder;
     $('#ai-key-hint').textContent = saved ? '(saved locally — enter a new one to replace)' : p === 'custom' ? '(optional for local endpoints)' : '(stored locally only)';
     $('#ai-base-wrap').hidden = p !== 'custom';
+    $('#ai-model-hint').textContent = state.ai_models?.[p]?.length ? `(${state.ai_models[p].length} cached)` : '(defaults)';
+    if (saved || p === 'custom') refreshModels(true);
   };
   form.elements.provider.onchange = syncProvider;
+  form.elements.model_select.onchange = () => {
+    const isCustom = form.elements.model_select.value === '__custom__';
+    $('#ai-custom-model-wrap').hidden = !isCustom;
+    form.elements.model_custom.required = isCustom;
+  };
+  $('#ai-refresh-models').onclick = () => refreshModels(false);
   syncProvider();
   $('#ai-cancel').onclick = () => $('#modal').close();
   form.onsubmit = async event => {
     event.preventDefault();
     const f = Object.fromEntries(new FormData(form));
+    const model = f.model_select === '__custom__' ? f.model_custom.trim() : f.model_select;
     const btn = $('button[type=submit]', form);
     btn.disabled = true;
     try {
-      await api('ai_maintain', {provider: f.provider, model: f.model, base_url: f.base_url || '', api_key: f.api_key || '', prompt: f.prompt || '', push: !!f.push}, {timeoutMs: 60000});
+      await api('ai_maintain', {provider: f.provider, model, base_url: f.base_url || '', api_key: f.api_key || '', prompt: f.prompt || ''}, {timeoutMs: 60000});
     } catch (error) {
       $('#ai-log').textContent = 'Error: ' + error.message;
     } finally {

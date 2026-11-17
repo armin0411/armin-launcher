@@ -26,6 +26,7 @@ Repository path: `/home/armin/Projects/armin-launcher` (GitHub: `armin0411/armin
    - Check all existing apps across supported systems (Arch/Omarchy, Debian/Ubuntu/Kubuntu, Fedora, Windows 11, macOS) to see if any have gained better or newer installation/update methods (e.g. a newly published GitHub release, native `.pkg.tar.zst` / `.AppImage` / `.deb` / `.rpm` / `.msi` / `.dmg` asset, or official `pacman`/`aur`/`winget`/`brew` package).
    - Remove or update any entries whose upstream releases disappeared (`404` with no releases).
    - Verify and refresh local icons (`ui/icons/`) and local screenshots (`ui/shots/` + `ui/details.json`), ensuring all referenced files exist locally and load cleanly.
+   - Check if the default fallback AI model lists in `ui/app.js` (`openAiMaintain`) need updating with newer models for OpenAI, Anthropic, Gemini, or OpenRouter.
 2. **If called without a specific app request**:
    - Perform the maintenance pass above, run verification tests, and push any updates to GitHub.
 3. **If called with a specific app request (add / update / remove)**:

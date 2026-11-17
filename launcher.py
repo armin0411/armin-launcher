@@ -333,7 +333,7 @@ class Engine:
                 app['icon'] = self.icon_url(app['id'])
                 app['compatible'] = self.is_compatible(app)
                 app['data_paths'] = [str(p) for p in self.user_data_paths(app)]
-            return dict(apps=apps, busy=self.busy, refreshing=self.refreshing, ai_running=self.ai_running, ai_report=self.ai_report, ai_configured=bool(self.get_ai_key('openai')), ai_keys={p: bool(self.get_ai_key(p)) for p in ('openai', 'anthropic', 'gemini', 'openrouter', 'custom')}, notice=self.notice, last_error=self.last_error, warnings=self.warnings, platform=self.platform, prefs=copy.deepcopy(self.state.get('prefs', {})), revision=time.monotonic())
+            return dict(apps=apps, busy=self.busy, refreshing=self.refreshing, ai_running=self.ai_running, ai_report=self.ai_report, ai_configured=bool(self.get_ai_key('openai')), ai_keys={p: bool(self.get_ai_key(p)) for p in ('openai', 'anthropic', 'gemini', 'openrouter', 'custom')}, ai_models=copy.deepcopy(self.state.get('ai_models', {})), notice=self.notice, last_error=self.last_error, warnings=self.warnings, platform=self.platform, prefs=copy.deepcopy(self.state.get('prefs', {})), revision=time.monotonic())
 
     def newer(self, latest, installed):
         if installed == 'unknown':
@@ -414,7 +414,42 @@ class Engine:
         cleaned = re.sub(r'^```(?:json)?\s*|\s*```$', '', text.strip(), flags=re.I)
         return json.loads(cleaned)
 
-    def ai_maintain(self, prompt='', push=False, model='gpt-4o-mini', provider='openai', base_url=''):
+    def fetch_ai_models(self, provider='openai', key='', base_url=''):
+        key = (key or '').strip() or self.get_ai_key(provider)
+        models = []
+        if provider == 'anthropic':
+            if not key:
+                return []
+            req = urllib.request.Request('https://api.anthropic.com/v1/models?limit=50', headers={'x-api-key': key, 'anthropic-version': '2023-06-01'})
+            with urllib.request.urlopen(req, timeout=15) as r:
+                models = [m['id'] for m in json.loads(r.read()).get('data', []) if m.get('id')]
+        elif provider == 'gemini':
+            if not key:
+                return []
+            req = urllib.request.Request(f'https://generativelanguage.googleapis.com/v1beta/models?key={urllib.parse.quote(key, safe="")}&pageSize=50')
+            with urllib.request.urlopen(req, timeout=15) as r:
+                for m in json.loads(r.read()).get('models', []):
+                    if 'generateContent' in m.get('supportedGenerationMethods', []):
+                        models.append(m['name'].removeprefix('models/'))
+        else:
+            endpoint = {'openai': 'https://api.openai.com/v1', 'openrouter': 'https://openrouter.ai/api/v1'}.get(provider, (base_url or '').strip().rstrip('/'))
+            if not endpoint or (provider != 'custom' and not key):
+                return []
+            headers = {'Authorization': f'Bearer {key}'} if key else {}
+            req = urllib.request.Request(f'{endpoint}/models', headers=headers)
+            with urllib.request.urlopen(req, timeout=15) as r:
+                raw = [m['id'] for m in json.loads(r.read()).get('data', []) if m.get('id')]
+            if provider == 'openai':
+                models = sorted([m for m in raw if m.startswith(('gpt-', 'o1', 'o3', 'o4', 'chatgpt-'))], reverse=True)[:40]
+            else:
+                models = raw[:50]
+        if models:
+            with self.lock:
+                self.state.setdefault('ai_models', {})[provider] = models
+                self.save()
+        return models
+
+    def ai_maintain(self, prompt='', model='gpt-4o-mini', provider='openai', base_url=''):
         key = self.get_ai_key(provider)
         if provider != 'custom' and not key:
             raise ValueError(f'Set an API key for {provider} first')
@@ -477,6 +512,10 @@ class Engine:
                         pass
 
                 log.append(f'Checked {len(facts)} apps' + (f' + search hits for "{prompt.strip()}"' if prompt.strip() else ''))
+                try:
+                    self.fetch_ai_models(provider, key, base_url)
+                except Exception:
+                    pass
                 self.ai_report = '\n'.join(log) + f'\nAsking {provider} ({model or "default"}) to review catalog & assets…'
                 self.emit('state', self.snapshot())
 
@@ -555,12 +594,6 @@ class Engine:
                     if t.returncode != 0:
                         raise ValueError('Tests failed after AI update:\n' + t.stderr[-500:])
                     log.append('All unit tests passed.')
-                    if push and shutil.which('git'):
-                        subprocess.run(['git', 'add', '-A', 'catalog.json', 'catalog.windows.json', 'ui/details.json', 'ui/icons', 'ui/shots'], cwd=ROOT, check=False)
-                        c = subprocess.run(['git', 'commit', '-m', 'AI Maintain catalog update'], cwd=ROOT, capture_output=True, text=True)
-                        if c.returncode == 0:
-                            p = subprocess.run(['git', 'push', 'origin', 'main'], cwd=ROOT, capture_output=True, text=True)
-                            log.append('Pushed to GitHub.' if p.returncode == 0 else f'Git push error: {p.stderr.strip()}')
                 else:
                     log.append('Catalog already up to date — no changes needed.')
 
@@ -1412,6 +1445,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
             path = urllib.parse.urlparse(self.path).path
             if path == '/api/refresh':
                 engine.start('refresh')
+            elif path == '/api/ai_models':
+                provider = str(data.get('provider', 'openai')).strip().lower()
+                if provider not in ('openai', 'anthropic', 'gemini', 'openrouter', 'custom'):
+                    raise ValueError('Unsupported AI provider')
+                if 'api_key' in data and str(data['api_key']).strip():
+                    with engine.lock:
+                        engine.state.setdefault('secrets', {}).setdefault('ai_keys', {})[provider] = str(data['api_key']).strip()
+                        engine.save()
+                models = engine.fetch_ai_models(provider, str(data.get('api_key', '')), str(data.get('base_url', '')))
+                self.json(200, {'models': models, 'ai_models': engine.state.get('ai_models', {})})
+                return
             elif path == '/api/ai_maintain':
                 provider = str(data.get('provider', 'openai')).strip().lower()
                 if provider not in ('openai', 'anthropic', 'gemini', 'openrouter', 'custom'):
@@ -1421,7 +1465,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         keys = engine.state.setdefault('secrets', {}).setdefault('ai_keys', {})
                         keys[provider] = str(data['api_key']).strip()
                         engine.save()
-                engine.ai_maintain(prompt=str(data.get('prompt', '')), push=bool(data.get('push', False)), model=str(data.get('model', '')), provider=provider, base_url=str(data.get('base_url', '')))
+                engine.ai_maintain(prompt=str(data.get('prompt', '')), model=str(data.get('model', '')), provider=provider, base_url=str(data.get('base_url', '')))
                 self.json(200, engine.snapshot())
                 return
             elif path == '/api/install':
