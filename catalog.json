@@ -496,26 +496,6 @@
       "hidden": false
     },
     {
-      "id": "pcbcraft",
-      "name": "PCBCraft",
-      "publisher": "Tangency Labs",
-      "category": "Engineering",
-      "tagline": "Electronics design and PCB layout for people and agents",
-      "accent": "#22c55e",
-      "website": "https://github.com/tangency-labs/pcbcraft",
-      "source": {
-        "type": "github_release",
-        "repo": "tangency-labs/pcbcraft",
-        "asset_pattern": "*linux-x86_64*"
-      },
-      "install": {
-        "type": "appimage",
-        "binary_name": "pcbcraft.AppImage",
-        "launch": "pcbcraft.AppImage"
-      },
-      "hidden": false
-    },
-    {
       "id": "fieldcraft",
       "name": "FieldCraft",
       "publisher": "Tangency Labs",

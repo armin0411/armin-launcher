@@ -722,24 +722,6 @@
     ],
     "shots": []
   },
-  "pcbcraft": {
-    "about": "Electronics design and PCB layout built in Rust for both human engineers and AI agents to work on the same board with unified undo/redo.",
-    "features": [
-      {
-        "title": "Schematic & PCB sync",
-        "text": "Familiar KiCad-style schematic capture, footprint assignment, and copper layout."
-      },
-      {
-        "title": "Agent-native MCP",
-        "text": "Built-in Model Context Protocol server and shared command history."
-      },
-      {
-        "title": "Manufacturing outputs",
-        "text": "Design rule checks (DRC), Gerber, and Excellon drill file export."
-      }
-    ],
-    "shots": []
-  },
   "fieldcraft": {
     "about": "Open-source multi-physics simulation and CAE modeler built from scratch in pure Rust: parametric part in, verified results out.",
     "features": [

@@ -496,26 +496,6 @@
       "hidden": false
     },
     {
-      "id": "pcbcraft",
-      "name": "PCBCraft",
-      "publisher": "Tangency Labs",
-      "category": "Engineering",
-      "tagline": "Electronics design and PCB layout for people and agents",
-      "accent": "#22c55e",
-      "website": "https://github.com/tangency-labs/pcbcraft",
-      "source": {
-        "type": "github_release",
-        "repo": "tangency-labs/pcbcraft",
-        "asset_pattern": "*windows*.zip"
-      },
-      "install": {
-        "type": "zip",
-        "bin": "pcbcraft.exe",
-        "launch": "pcbcraft.exe"
-      },
-      "hidden": false
-    },
-    {
       "id": "fieldcraft",
       "name": "FieldCraft",
       "publisher": "Tangency Labs",
@@ -532,26 +512,6 @@
         "type": "zip",
         "bin": "fieldcraft.exe",
         "launch": "fieldcraft.exe"
-      },
-      "hidden": false
-    },
-    {
-      "id": "lemon-studio",
-      "name": "Lemon Studio",
-      "publisher": "ItsAlphaNeon",
-      "category": "Audio",
-      "tagline": "Pattern-based digital audio workstation written in Rust",
-      "accent": "#eab308",
-      "website": "https://getlemonstudio.app",
-      "source": {
-        "type": "github_release",
-        "repo": "ItsAlphaNeon/Lemon-Studio",
-        "asset_pattern": "*windows*.zip"
-      },
-      "install": {
-        "type": "zip",
-        "bin": "lemonstudio.exe",
-        "launch": "lemonstudio.exe"
       },
       "hidden": false
     },
