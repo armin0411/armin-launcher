@@ -107,7 +107,7 @@ function action(a) {
 function menu(a) {
   const repo = a.source.type === 'github_release' ? 'https://github.com/' + a.source.repo : a.source.type === 'aur' ? 'https://aur.archlinux.org/packages/' + encodeURIComponent(a.source.package) : a.source.type === 'winget' ? 'https://winstall.app/apps/' + encodeURIComponent(a.source.package) : 'https://archlinux.org/packages/?q=' + encodeURIComponent(a.source.package);
   const jobActive = a.job && !terminal.includes(a.job.status) && state.busy;
-  return `<div class="menu-wrap"><button class="menu-button" data-action="menu" aria-label="Menu for ${escapeHTML(a.name)}" aria-expanded="false">···</button><div class="app-menu" hidden><button data-action="details">Details / Release notes</button><a href="${escapeHTML(repo)}" target="_blank" rel="noopener noreferrer">Open Repo ↗</a><button data-action="hide">${a.hidden ? 'Unhide' : 'Hide'} app</button><button data-action="uninstall" class="danger" ${!a.installed || jobActive ? 'disabled' : ''}>Uninstall</button></div></div>`;
+  return `<div class="menu-wrap"><button class="menu-button" data-action="menu" aria-label="Menu for ${escapeHTML(a.name)}" aria-expanded="false">···</button><div class="app-menu" hidden><button data-action="details">Details / Release notes</button><a href="${escapeHTML(repo)}" target="_blank" rel="noopener noreferrer">Open Repo ↗</a><button data-action="hide">${a.hidden ? 'Unhide' : 'Hide'} app</button><button data-action="uninstall" class="danger" ${!a.installed || jobActive ? 'disabled' : ''}>Uninstall</button><button data-action="clean-uninstall" class="danger" ${!a.installed || jobActive ? 'disabled' : ''}>Clean uninstall…</button></div></div>`;
 }
 function formatReleased(a) {
   const raw = a.release?.published_at;
@@ -276,11 +276,30 @@ function details(a) {
   }
 }
 function confirmUninstall(a) {
-  showModal('Uninstall ' + a.name + '?', `<p class="muted">This removes the installed application. Its catalog entry stays in your library.</p><div class="modal-actions"><button id="uninstall-cancel">Cancel</button><button id="uninstall-confirm" class="primary">Uninstall</button></div>`);
+  showModal('Uninstall ' + a.name + '?', `<p class="muted">This removes the installed application. Your settings, data, and catalog entry stay intact.</p><div class="modal-actions"><button id="uninstall-cancel">Cancel</button><button id="uninstall-confirm" class="primary">Uninstall</button></div>`);
   $('#uninstall-cancel').onclick = () => $('#modal').close();
   $('#uninstall-confirm').onclick = async () => {
     $('#modal').close();
     try { await api('uninstall', {id:a.id}); } catch (error) { setNotice(error.message, true); }
+  };
+}
+function confirmCleanUninstall(a) {
+  const paths = a.data_paths || [];
+  const pathList = paths.length
+    ? `<div class="clean-paths mono">${paths.map(p => `<div>${escapeHTML(p)}</div>`).join('')}</div>`
+    : '<p class="muted">No app-specific data paths configured.</p>';
+  let step = 0;
+  const labels = ['Yes, delete everything (1/3)', 'Yes — are you sure? (2/3)', 'Yes — permanently delete app & data (3/3)'];
+  showModal('Clean uninstall ' + a.name + '?', `<p class="muted">This permanently removes <strong>${escapeHTML(a.name)}</strong> AND deletes all user settings, caches, and generated files in:</p>${pathList}<p class="text-danger" style="font-size:12px;margin:12px 0 0">Press <strong>Yes</strong> 3 times to confirm permanent deletion.</p><div class="modal-actions"><button id="clean-cancel">Cancel</button><button id="clean-confirm" class="danger-btn">${labels[0]}</button></div>`);
+  $('#clean-cancel').onclick = () => $('#modal').close();
+  $('#clean-confirm').onclick = async () => {
+    step += 1;
+    if (step < 3) {
+      $('#clean-confirm').textContent = labels[step];
+      return;
+    }
+    $('#modal').close();
+    try { await api('uninstall', {id:a.id, clean:true}); } catch (error) { setNotice(error.message, true); }
   };
 }
 function addApp() {
@@ -353,6 +372,7 @@ $('#apps').addEventListener('click', async event => {
   closeMenus();
   if (op === 'details') return details(a);
   if (op === 'uninstall') return confirmUninstall(a);
+  if (op === 'clean-uninstall') return confirmCleanUninstall(a);
   try {
     if (op === 'hide') await api('catalog', {op:'hide', id:a.id, hidden:!a.hidden});
     else if (op === 'install') await api('install', {ids:[a.id]});

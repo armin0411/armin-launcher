@@ -833,6 +833,27 @@ dialog::backdrop { background: #000a; backdrop-filter: blur(3px); }
 .detail-grid dt { color: var(--ink-soft); }
 .detail-grid dd { margin: 0; overflow-wrap: anywhere; }
 .text-danger { color: var(--red); }
+.clean-paths {
+  font-size: 11px;
+  line-height: 1.65;
+  color: var(--ink-soft);
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  padding: 10px 12px;
+  margin-top: 10px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.danger-btn {
+  background: #b91c1c;
+  border-color: #dc2626;
+  color: #ffffff;
+  font-weight: 700;
+}
+.danger-btn:hover {
+  background: #991b1b;
+  border-color: #ef4444;
+}
 [hidden] { display: none !important; }
 
 /* Responsive */

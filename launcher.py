@@ -318,6 +318,7 @@ class Engine:
                 app['verification'] = self.state['installed'].get(app['id'], {}).get('verification')
                 app['icon'] = self.icon_url(app['id'])
                 app['compatible'] = self.is_compatible(app)
+                app['data_paths'] = [str(p) for p in self.user_data_paths(app)]
             return dict(apps=apps, busy=self.busy, refreshing=self.refreshing, notice=self.notice, last_error=self.last_error, warnings=self.warnings, platform=self.platform, prefs=copy.deepcopy(self.state.get('prefs', {})), revision=time.monotonic())
 
     def newer(self, latest, installed):
@@ -444,7 +445,7 @@ class Engine:
             self.warnings = warnings
             self.refreshing = False
 
-    def start(self, action, ids=None):
+    def start(self, action, ids=None, clean=False):
         terminal = ('Complete', 'Cancelled', 'Error')
         with self.lock:
             if action == 'refresh':
@@ -466,7 +467,7 @@ class Engine:
                 if action == 'refresh':
                     self.refresh()
                 elif action == 'uninstall':
-                    self.uninstall(ids[0])
+                    self.uninstall(ids[0], clean=clean)
                 else:
                     self.install_many(ids)
             except Cancelled:
@@ -668,6 +669,7 @@ class Engine:
                     elif not IS_WIN:
                         self.desktop(app, target)
                     self.sync_mcp(app)
+                    self.cleanup_download(path)
                 elif ins['type'] == 'winget':
                     if not shutil.which('winget'):
                         raise ValueError('winget is not installed on this Windows system')
@@ -692,6 +694,7 @@ class Engine:
                 for app, path, tag, verification in packages:
                     self.record(app, tag, path, verification)
                     self.sync_mcp(app)
+                    self.cleanup_download(path)
                     self.status(app['id'], 'Complete', message=verification)
             self.notice = 'All requested installs completed' if chosen else 'Everything is up to date'
         except Exception as e:
@@ -875,7 +878,50 @@ class Engine:
         kw = {'creationflags': subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP} if IS_WIN else {'start_new_session': True}
         subprocess.Popen(self.launch_argv(app), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **kw)
 
-    def uninstall(self, appid):
+    def cleanup_download(self, path):
+        if not path:
+            return
+        p = Path(path)
+        for candidate in (p, p.parent / (p.name + '.part'), p.parent / (p.name + '.source.json')):
+            candidate.unlink(missing_ok=True)
+
+    def user_data_paths(self, app):
+        appid = app['id']
+        name = app['name']
+        pkg = app['install'].get('package', '')
+        candidates = []
+        if IS_WIN:
+            appdata = Path(os.environ.get('APPDATA') or self.home / 'AppData/Roaming')
+            local = Path(os.environ.get('LOCALAPPDATA') or self.home / 'AppData/Local')
+            custom_win = {
+                'blender': [appdata / 'Blender Foundation/Blender', local / 'Blender Foundation/Blender'],
+                'lemon-studio': [appdata / 'Lemon Studio', local / 'Lemon Studio'],
+            }
+            if appid in custom_win:
+                candidates.extend(custom_win[appid])
+            for key in {appid, name}:
+                candidates.extend([appdata / key, local / key])
+        else:
+            cfg = self.home / '.config'
+            share = self.home / '.local/share'
+            cache = self.home / '.cache'
+            custom_linux = {
+                'krita': [cfg / 'kritarc', cfg / 'kritadisplayrc', share / 'krita', cache / 'krita'],
+                'kdenlive': [cfg / 'kdenliverc', cfg / 'kdenlive', share / 'kdenlive', cache / 'kdenlive'],
+                'lemon-studio': [cfg / 'lemonstudio', share / 'lemonstudio', cache / 'lemonstudio'],
+                'solidcraft': [cfg / 'solidcraft', share / 'solidcraft', cache / 'solidcraft', cfg / 'io.tangencylabs.solidcraft', share / 'io.tangencylabs.solidcraft', cache / 'io.tangencylabs.solidcraft'],
+            }
+            if appid in custom_linux:
+                candidates.extend(custom_linux[appid])
+            for key in {appid, *( [pkg] if pkg and '.' in pkg else [] )}:
+                candidates.extend([cfg / key, share / key, cache / key])
+        seen = []
+        for c in candidates:
+            if c not in seen and c != self.home:
+                seen.append(c)
+        return seen
+
+    def uninstall(self, appid, clean=False):
         app = self.app(appid)
         if not app:
             raise ValueError('Unknown app ID')
@@ -883,7 +929,7 @@ class Engine:
         self.status(appid, 'Uninstalling')
         try:
             if ins['type'] in ('pacman_pkg', 'pacman', 'aur'):
-                self.transaction(['pkexec', 'pacman', '-R', '--noconfirm', ins['package']], [appid])
+                self.transaction([*self.privilege_cmd(), 'pacman', '-R', '--noconfirm', ins['package']], [appid])
             elif ins['type'] == 'winget':
                 if not shutil.which('winget'):
                     raise ValueError('winget is not installed on this Windows system')
@@ -896,13 +942,27 @@ class Engine:
                     raise ValueError('Refusing to remove linked application directory')
                 if base.exists():
                     shutil.rmtree(base)
-            if not IS_WIN:
+            if IS_WIN:
+                appdata = os.environ.get('APPDATA')
+                if appdata:
+                    safe_name = re.sub(r'[<>:"/\\|?*]', '', app['name']).strip() or 'App'
+                    (Path(appdata) / 'Microsoft/Windows/Start Menu/Programs' / f'{safe_name}.lnk').unlink(missing_ok=True)
+            else:
                 (self.home / '.local/share/applications' / f'launchcraft-{appid}.desktop').unlink(missing_ok=True)
+            release_asset = self.state.get('releases', {}).get(appid, {}).get('asset', {}).get('name')
+            if release_asset:
+                self.cleanup_download(self.downloads / release_asset)
+            if clean:
+                for p in self.user_data_paths(app):
+                    if p.is_symlink() or p.is_file():
+                        p.unlink(missing_ok=True)
+                    elif p.is_dir():
+                        shutil.rmtree(p, ignore_errors=True)
             self.sync_mcp(app, remove=True)
             self.state['installed'].pop(appid, None)
             self.save()
             self.status(appid, 'Complete')
-            self.notice = f'{app["name"]} uninstalled'
+            self.notice = f'{app["name"]} clean-uninstalled' if clean else f'{app["name"]} uninstalled'
         except Exception as e:
             self.status(appid, 'Error', message=str(e))
             raise
@@ -1121,7 +1181,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             elif path == '/api/uninstall':
                 if not engine.app(data['id']):
                     raise ValueError('Unknown app ID')
-                engine.start('uninstall', [data['id']])
+                engine.start('uninstall', [data['id']], clean=bool(data.get('clean', False)))
             elif path == '/api/catalog':
                 def edit(cat):
                     op = data.get('op')
