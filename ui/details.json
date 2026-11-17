@@ -179,7 +179,16 @@
         "title": "Built-in security"
       }
     ],
-    "shots": []
+    "shots": [
+      {
+        "caption": "PDF viewer and document tabs",
+        "url": "/shots/pdfcraft-1.png"
+      },
+      {
+        "caption": "Two-up page layout",
+        "url": "/shots/pdfcraft-2.png"
+      }
+    ]
   },
   "effectcraft": {
     "about": "A native compositor with compositions, layers, keyframes, effects, expressions, 3D cameras and lights, and a render queue. Young, moving fast, and already usable.",
@@ -248,7 +257,16 @@
         "title": "Agent-ready"
       }
     ],
-    "shots": []
+    "shots": [
+      {
+        "caption": "Animation stage and timeline",
+        "url": "/shots/anicraft-1.png"
+      },
+      {
+        "caption": "Keyframes and vector tweening",
+        "url": "/shots/anicraft-2.png"
+      }
+    ]
   },
   "designcraft": {
     "about": "A native layout app with spreads, parent pages, threaded stories, styles, swatches, text wrap and a paragraph composer. No subscription, no license server and no telemetry.",
@@ -313,7 +331,16 @@
         "title": "Your files"
       }
     ],
-    "shots": []
+    "shots": [
+      {
+        "caption": "Interface design canvas",
+        "url": "/shots/figcraft-1.png"
+      },
+      {
+        "caption": "Components and variants",
+        "url": "/shots/figcraft-2.png"
+      }
+    ]
   },
   "wordcraft": {
     "about": "A word processor with the ribbon, shortcuts and behavior you already know. Open source, and built from public specifications.",
@@ -510,7 +537,16 @@
         "title": "Mesh maps"
       }
     ],
-    "shots": []
+    "shots": [
+      {
+        "caption": "PBR texture workspace",
+        "url": "/shots/texturecraft-1.png"
+      },
+      {
+        "caption": "Map baking and channels",
+        "url": "/shots/texturecraft-2.png"
+      }
+    ]
   },
   "materialcraft": {
     "about": "Create tileable PBR materials and export texture maps.",
@@ -524,7 +560,16 @@
         "title": "Live previews"
       }
     ],
-    "shots": []
+    "shots": [
+      {
+        "caption": "Node-based material graph",
+        "url": "/shots/materialcraft-1.png"
+      },
+      {
+        "caption": "Procedural wood material",
+        "url": "/shots/materialcraft-2.png"
+      }
+    ]
   },
   "craft-anything": {
     "about": "Point it at a target and say what you want. It studies the original with real inspection tools, has a coding agent build a new project in the stack you ask for, checks the result against the original and refines it. Open source and clean-room.",
@@ -546,7 +591,16 @@
         "title": "Agent-ready"
       }
     ],
-    "shots": []
+    "shots": [
+      {
+        "caption": "Reverse-engineering workspace",
+        "url": "/shots/craft-anything-1.png"
+      },
+      {
+        "caption": "Interactive build view",
+        "url": "/shots/craft-anything-2.png"
+      }
+    ]
   },
   "solidcraft": {
     "about": "A parametric solid modeller by Tangency Labs. Sketch, constrain and build solids on an editable feature timeline: change a dimension and the model rebuilds. Early, but usable for simple parts. Open source, and it can be driven by AI agents through its MCP server.",
@@ -568,7 +622,16 @@
         "title": "Desktop, web and agents"
       }
     ],
-    "shots": []
+    "shots": [
+      {
+        "caption": "Parametric 3D CAD assembly",
+        "url": "/shots/solidcraft-1.jpg"
+      },
+      {
+        "caption": "SolidCraft overview",
+        "url": "/shots/solidcraft-2.png"
+      }
+    ]
   },
   "mailcraft": {
     "about": "An open-source mail program by UCS Care Group, written from scratch in Rust: the folder pane, message list and reading pane people already know, with a calendar, people and to-dos. Works with Microsoft 365, Outlook.com and IMAP. In public beta, and it can be driven by AI agents through its MCP server.",
@@ -590,7 +653,12 @@
         "title": "Desktop, web and agents"
       }
     ],
-    "shots": []
+    "shots": [
+      {
+        "caption": "Mail, calendar and contacts",
+        "url": "/shots/mailcraft-1.webp"
+      }
+    ]
   },
   "godot": {
     "about": "A feature-packed, cross-platform 2D and 3D game engine with a unified node-and-scene architecture, built-in GDScript, C#, and GDExtension support.",
@@ -612,7 +680,12 @@
         "text": "Export to Linux, Windows, macOS, Android, iOS, and WebAssembly from one project."
       }
     ],
-    "shots": []
+    "shots": [
+      {
+        "caption": "Godot 3D & 2D editor",
+        "url": "/shots/godot-1.jpg"
+      }
+    ]
   },
   "blender": {
     "about": "The free and open-source 3D creation suite supporting modeling, sculpting, rigging, animation, simulation, rendering, compositing, and video editing.",
@@ -661,7 +734,12 @@
         "text": "Timeline, onion skinning, and audio sync for traditional frame-by-frame animation."
       }
     ],
-    "shots": []
+    "shots": [
+      {
+        "caption": "Krita digital painting workspace",
+        "url": "/shots/krita-1.webp"
+      }
+    ]
   },
   "audacity": {
     "about": "An easy-to-use, multi-track audio editor and recorder for podcasts, music, sound effects, and voice-overs.",
@@ -679,7 +757,12 @@
         "text": "Visualize and clean up frequencies directly in spectrogram mode."
       }
     ],
-    "shots": []
+    "shots": [
+      {
+        "caption": "Audacity audio editor",
+        "url": "/shots/audacity-1.webp"
+      }
+    ]
   },
   "kdenlive": {
     "about": "An open-source non-linear video editor built on MLT and FFmpeg, supporting multi-track timelines, keyframeable effects, and proxy editing.",
@@ -697,7 +780,12 @@
         "text": "Scopes, LUTs, keyframes, motion tracking, and hardware-accelerated encoding."
       }
     ],
-    "shots": []
+    "shots": [
+      {
+        "caption": "Kdenlive multi-track video editor",
+        "url": "/shots/kdenlive-1.webp"
+      }
+    ]
   },
   "fieldcraft": {
     "about": "Open-source multi-physics simulation and CAE modeler built from scratch in pure Rust: parametric part in, verified results out.",
@@ -715,7 +803,16 @@
         "text": "Generate analysis decks compatible with Abaqus, Nastran, and LS-DYNA."
       }
     ],
-    "shots": []
+    "shots": [
+      {
+        "caption": "FEA stress simulation",
+        "url": "/shots/fieldcraft-1.png"
+      },
+      {
+        "caption": "Automated hex mesh",
+        "url": "/shots/fieldcraft-2.png"
+      }
+    ]
   },
   "lemon-studio": {
     "about": "A free, open-source pattern-based digital audio workstation written from scratch in Rust with native .flp project compatibility.",
@@ -733,7 +830,16 @@
         "text": "Low-latency audio engine with a fast CPU-rendered interface."
       }
     ],
-    "shots": []
+    "shots": [
+      {
+        "caption": "Lemon Studio DAW workspace",
+        "url": "/shots/lemon-studio-1.webp"
+      },
+      {
+        "caption": "Piano roll and patterns",
+        "url": "/shots/lemon-studio-2.webp"
+      }
+    ]
   },
   "concat": {
     "about": "Concat is a local-first, cross-platform video editor built in Rust with GPU-accelerated rendering, multi-track timelines, local Whisper auto-captions, and 4K 60fps export.",
@@ -751,7 +857,12 @@
         "text": "Built-in JSON-RPC API and Model Context Protocol server for scripted editing."
       }
     ],
-    "shots": []
+    "shots": [
+      {
+        "caption": "Concat video editor timeline",
+        "url": "/shots/concat-1.png"
+      }
+    ]
   },
   "rigby2d": {
     "about": "Rigby2D is an open-source 2D skeletal animation editor and runtime suite for games and films, featuring mesh deformation, IK constraints, lip-sync, and engine runtimes.",
@@ -769,6 +880,15 @@
         "text": "Native runtimes for Godot, Rust, WebGL, Defold, and Unity, plus an MCP server."
       }
     ],
-    "shots": []
+    "shots": [
+      {
+        "caption": "Rigby2D skeletal rigging editor",
+        "url": "/shots/rigby2d-1.jpg"
+      },
+      {
+        "caption": "Rigby2D animation & scene tools",
+        "url": "/shots/rigby2d-2.jpg"
+      }
+    ]
   }
 }
