@@ -7,6 +7,8 @@ let state = {apps: [], busy: false}, token = '', filter = 'all', prefsLoaded = f
 let view = localStorage.getItem('launchcraft-view') === 'list' ? 'list' : 'grid';
 let zoom = Math.max(.75, Math.min(1.75, Number(localStorage.getItem('launchcraft-zoom')) || 1));
 let profiles = DEFAULT_PROFILES.slice();
+let appDetails = {};
+let shownApps = [];
 let events;
 const terminal = ['Complete', 'Cancelled', 'Error'];
 const PROFILE_ICONS = {
@@ -100,11 +102,12 @@ function action(a) {
   const op = a.installed && !a.update ? 'open' : 'install';
   const cls = a.update ? 'is-update primary' : a.installed ? 'is-open' : 'is-install';
   const label = a.update ? 'UPDATE ' + a.latest : a.installed ? 'OPEN ↗' : 'INSTALL';
-  return `<button class="action ${cls}" data-action="${op}" ${state.busy && op !== 'open' ? 'disabled' : ''}>${escapeHTML(label)}</button>`;
+  return `<button class="action ${cls}" data-action="${op}" ${state.refreshing && op !== 'open' ? 'disabled' : ''}>${escapeHTML(label)}</button>`;
 }
 function menu(a) {
-  const repo = a.source.type === 'github_release' ? 'https://github.com/' + a.source.repo : a.source.type === 'aur' ? 'https://aur.archlinux.org/packages/' + encodeURIComponent(a.source.package) : 'https://archlinux.org/packages/?q=' + encodeURIComponent(a.source.package);
-  return `<div class="menu-wrap"><button class="menu-button" data-action="menu" aria-label="Menu for ${escapeHTML(a.name)}" aria-expanded="false">···</button><div class="app-menu" hidden><button data-action="details">Details / Release notes</button><a href="${escapeHTML(repo)}" target="_blank" rel="noopener noreferrer">Open Repo ↗</a><button data-action="hide">${a.hidden ? 'Unhide' : 'Hide'} app</button><button data-action="uninstall" class="danger" ${!a.installed || state.busy ? 'disabled' : ''}>Uninstall</button></div></div>`;
+  const repo = a.source.type === 'github_release' ? 'https://github.com/' + a.source.repo : a.source.type === 'aur' ? 'https://aur.archlinux.org/packages/' + encodeURIComponent(a.source.package) : a.source.type === 'winget' ? 'https://winstall.app/apps/' + encodeURIComponent(a.source.package) : 'https://archlinux.org/packages/?q=' + encodeURIComponent(a.source.package);
+  const jobActive = a.job && !terminal.includes(a.job.status) && state.busy;
+  return `<div class="menu-wrap"><button class="menu-button" data-action="menu" aria-label="Menu for ${escapeHTML(a.name)}" aria-expanded="false">···</button><div class="app-menu" hidden><button data-action="details">Details / Release notes</button><a href="${escapeHTML(repo)}" target="_blank" rel="noopener noreferrer">Open Repo ↗</a><button data-action="hide">${a.hidden ? 'Unhide' : 'Hide'} app</button><button data-action="uninstall" class="danger" ${!a.installed || jobActive ? 'disabled' : ''}>Uninstall</button></div></div>`;
 }
 function appIdentity(a, withTagline = false) {
   const icon = a.icon
@@ -125,6 +128,7 @@ function renderApps() {
   });
   const sort = $('#sort').value;
   apps.sort((a,b) => (sort === 'updates' ? Number(b.update) - Number(a.update) : sort === 'category' ? a.category.localeCompare(b.category) : 0) || a.name.localeCompare(b.name));
+  shownApps = apps;
   const container = $('#apps');
   container.className = view;
   let html = view === 'list' && apps.length ? '<div class="table-head" aria-hidden="true"><span>APP</span><span>STATUS</span><span>CATEGORY / PUBLISHER</span><span>INSTALLED → LATEST</span><span style="text-align:right">ACTION</span><span></span></div>' : '';
@@ -165,16 +169,79 @@ function render() {
   else setNotice(state.notice || 'Ready. Refresh to check the latest releases.', !!state.last_error);
   renderApps();
 }
-function showModal(title, content) {
+function showModal(title, content, wide = false) {
   $('#modal-title').textContent = title;
   $('#modal-body').replaceChildren();
   if (typeof content === 'string') $('#modal-body').innerHTML = content;
   else $('#modal-body').append(content);
   $('#modal').classList.toggle('add-modal', !!$('#add-form'));
+  $('#modal').classList.toggle('details-modal', !!wide);
   if (!$('#modal').open) $('#modal').showModal();
 }
 function details(a) {
-  showModal(a.name, `<p class="muted">${escapeHTML(a.tagline)}</p><dl class="detail-grid"><dt>Publisher</dt><dd>${escapeHTML(a.publisher)}</dd><dt>Source</dt><dd>${escapeHTML(a.source.repo || a.source.package)}</dd><dt>Installed</dt><dd class="mono">${escapeHTML(a.installed || 'Not installed')}</dd><dt>Latest</dt><dd class="mono">${escapeHTML(a.latest || 'Not checked')}</dd><dt>Installer</dt><dd>${escapeHTML(a.install.type)}</dd><dt>Verification</dt><dd>${escapeHTML(a.verification || 'Not installed by LaunchCraft')}</dd></dl>${a.job?.message ? '<p class="muted">' + escapeHTML(a.job.message) + '</p>' : ''}<p><a href="${escapeHTML(a.release?.url || a.website)}" target="_blank" rel="noopener noreferrer">Release page ↗</a></p><h3>Release notes</h3><pre class="release-notes">${escapeHTML(a.release?.notes || 'No release notes cached. Refresh to fetch the latest release.')}</pre>`);
+  const accent = /^#[0-9a-f]{6}$/i.test(a.accent) ? a.accent : '#2d81ff';
+  const meta = appDetails[a.id] || {};
+  const shots = (meta.shots || []).slice(0, 2);
+  const features = meta.features || [];
+  const repoUrl = a.source.type === 'github_release' ? 'https://github.com/' + a.source.repo : a.source.type === 'aur' ? 'https://aur.archlinux.org/packages/' + encodeURIComponent(a.source.package) : a.source.type === 'winget' ? 'https://winstall.app/apps/' + encodeURIComponent(a.source.package) : 'https://archlinux.org/packages/?q=' + encodeURIComponent(a.source.package);
+  const iconHTML = a.icon ? `<div class="app-icon has-img details-icon"><img src="${escapeHTML(a.icon)}" alt=""></div>` : `<div class="app-icon details-icon">${escapeHTML(a.name.slice(0,1).toUpperCase())}</div>`;
+  const idx = shownApps.findIndex(x => x.id === a.id);
+  const prevApp = idx > 0 ? shownApps[idx - 1] : null;
+  const nextApp = idx >= 0 && idx < shownApps.length - 1 ? shownApps[idx + 1] : null;
+
+  const shotsHTML = shots.length
+    ? `<div class="details-shots">${shots.map(s => `<figure class="details-shot"><img src="${escapeHTML(s.url)}" alt="${escapeHTML(s.caption || a.name)}" loading="lazy">${s.caption ? `<figcaption>${escapeHTML(s.caption.toUpperCase())}</figcaption>` : ''}</figure>`).join('')}</div>`
+    : '';
+  const aboutText = meta.about || a.tagline;
+  const featuresHTML = features.length
+    ? `<div class="details-features"><div class="details-section-label">01 / FEATURES</div>${features.map((f, i) => `<div class="feature-card"><span class="feature-num">${String(i + 1).padStart(2, '0')}</span><div><strong>${escapeHTML(f.title)}</strong><p>${escapeHTML(f.text)}</p></div></div>`).join('')}</div>`
+    : `<div class="details-features"><div class="details-section-label">01 / TECHNICAL INFO</div><dl class="detail-grid"><dt>Publisher</dt><dd>${escapeHTML(a.publisher)}</dd><dt>Source</dt><dd>${escapeHTML(a.source.repo || a.source.package)}</dd><dt>Installed</dt><dd class="mono">${escapeHTML(a.installed || 'Not installed')}</dd><dt>Latest</dt><dd class="mono">${escapeHTML(a.latest || 'Not checked')}</dd><dt>Installer</dt><dd>${escapeHTML(a.install.type)}</dd><dt>Verification</dt><dd>${escapeHTML(a.verification || 'Not installed by Armin Launcher')}</dd></dl></div>`;
+
+  const html = `
+    <div class="details-shell" style="--app-accent:${accent}">
+      <div class="details-hero">
+        <div class="details-hero-top">
+          <div class="details-hero-id">${iconHTML}<div><div class="details-app-name">${escapeHTML(a.name)}</div><p class="details-tagline">${escapeHTML(a.tagline)}</p><div class="details-meta-line">${escapeHTML(a.installed ? 'Installed ' + a.installed : a.latest ? 'Latest ' + a.latest : 'Not checked')} · ${escapeHTML(a.category)} · ${escapeHTML(a.publisher)}</div></div></div>
+          <div class="details-hero-actions">
+            <div class="details-nav"><button type="button" id="details-prev" ${prevApp ? '' : 'disabled'} aria-label="Previous app">‹</button><button type="button" id="details-next" ${nextApp ? '' : 'disabled'} aria-label="Next app">›</button></div>
+            ${action(a)}
+          </div>
+        </div>
+        <div class="details-links">
+          <a class="details-link-pill" href="${escapeHTML(a.website)}" target="_blank" rel="noopener noreferrer">WEBSITE ↗</a>
+          <a class="details-link-pill" href="${escapeHTML(repoUrl)}" target="_blank" rel="noopener noreferrer">SOURCE ↗</a>
+          <a class="details-link-pill" href="${escapeHTML(a.release?.url || repoUrl)}" target="_blank" rel="noopener noreferrer">RELEASES ↗</a>
+          ${statusBadge(a)}
+        </div>
+      </div>
+      <div class="details-body">
+        <div class="details-left">
+          ${shotsHTML}
+          <p class="details-about">${escapeHTML(aboutText)}</p>
+          ${a.job?.message ? `<p class="muted">${escapeHTML(a.job.message)}</p>` : ''}
+          <div class="details-section-label" style="margin-top:16px">02 / LATEST RELEASE</div>
+          <pre class="release-notes">${escapeHTML(a.release?.notes || 'No release notes cached. Click Refresh to fetch the latest release.')}</pre>
+        </div>
+        <div class="details-right">
+          ${featuresHTML}
+        </div>
+      </div>
+    </div>`;
+
+  showModal(a.name, html, true);
+  if (prevApp) $('#details-prev').onclick = () => details(prevApp);
+  if (nextApp) $('#details-next').onclick = () => details(nextApp);
+  const actBtn = $('#modal-body button[data-action]');
+  if (actBtn) {
+    actBtn.onclick = async () => {
+      const op = actBtn.dataset.action;
+      try {
+        if (op === 'install') { await api('install', {ids:[a.id]}); $('#modal').close(); }
+        else if (op === 'open') { await api('open', {id:a.id}); }
+        else if (op === 'cancel') { await api('cancel'); }
+      } catch (error) { setNotice(error.message, true); }
+    };
+  }
 }
 function confirmUninstall(a) {
   showModal('Uninstall ' + a.name + '?', `<p class="muted">This removes the installed application. Its catalog entry stays in your library.</p><div class="modal-actions"><button id="uninstall-cancel">Cancel</button><button id="uninstall-confirm" class="primary">Uninstall</button></div>`);
@@ -220,7 +287,15 @@ function addApp() {
 }
 $('#apps').addEventListener('click', async event => {
   const button = event.target.closest('button[data-action]');
-  if (!button) return;
+  if (!button) {
+    if (event.target.closest('a, .app-menu')) return;
+    const card = event.target.closest('.card[data-id]');
+    if (!card) return;
+    closeMenus();
+    const app = state.apps.find(x => x.id === card.dataset.id);
+    if (app) details(app);
+    return;
+  }
   const a = state.apps.find(a => a.id === button.closest('[data-id]').dataset.id);
   if (!a) return;
   const op = button.dataset.action;
@@ -344,5 +419,6 @@ async function connect() {
   } catch (error) {setNotice(error.message, true);}
 }
 window.addEventListener('pagehide', () => events?.close());
+fetch('/details.json').then(r => r.ok ? r.json() : {}).then(d => { appDetails = d; }).catch(() => {});
 connect();
 if (!$('#modal').open) $('#search').focus({preventScroll: true});

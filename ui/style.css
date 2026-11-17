@@ -243,6 +243,7 @@ main.grid {
   border: 1px solid var(--line);
   position: relative;
   min-width: 0;
+  cursor: pointer;
 }
 .card:before {
   content: "";
@@ -760,4 +761,177 @@ dialog.add-modal[open] {
   padding: 16px 24px;
   border-top: 1px solid var(--line);
   background: var(--bg);
+}
+
+/* ArtCraft-style App Details Modal */
+dialog.details-modal {
+  width: min(1060px, calc(100vw - 32px));
+  max-height: 90vh;
+}
+dialog.details-modal #modal-body {
+  padding: 0;
+}
+.details-shell {
+  border-right: 3px solid var(--app-accent);
+  border-top: 2px solid var(--app-accent);
+}
+.details-hero {
+  padding: 20px 24px 16px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--app-accent) 14%, var(--surface)), var(--bg));
+  border-bottom: 1px solid var(--line);
+}
+.details-hero-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.details-hero-id {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.details-icon {
+  width: 60px;
+  height: 60px;
+  font-size: 28px;
+}
+.details-app-name {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--app-accent);
+  line-height: 1.15;
+}
+.details-tagline {
+  margin: 4px 0;
+  font-size: 13.5px;
+  color: var(--strong);
+  font-weight: 500;
+}
+.details-meta-line {
+  font-size: 11.5px;
+  color: var(--ink-soft);
+}
+.details-hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.details-nav {
+  display: flex;
+  border: 1px solid var(--line);
+}
+.details-nav button {
+  border: 0;
+  padding: 6px 11px;
+  font-size: 16px;
+  line-height: 1;
+}
+.details-nav button + button {
+  border-left: 1px solid var(--line);
+}
+.details-links {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+.details-link-pill {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .6px;
+  color: var(--ink);
+  text-decoration: none;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  background: var(--sunken);
+}
+.details-link-pill:hover {
+  border-color: var(--muted);
+  background: var(--hover);
+}
+.details-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 24px;
+  padding: 20px 24px 24px;
+}
+.details-shots {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.details-shot {
+  margin: 0;
+  border: 1px solid var(--line);
+  background: var(--sunken);
+}
+.details-shot img {
+  display: block;
+  width: 100%;
+  max-height: 280px;
+  object-fit: cover;
+}
+.details-shot figcaption {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+  letter-spacing: .8px;
+  color: var(--ink-soft);
+  padding: 7px 10px;
+  border-top: 1px solid var(--line);
+}
+.details-about {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink);
+  margin: 0;
+  white-space: pre-line;
+}
+.details-section-label {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--ink-soft);
+  margin-bottom: 10px;
+}
+.details-features {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.feature-card {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+.feature-num {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--app-accent);
+  padding-top: 2px;
+}
+.feature-card strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--strong);
+  margin-bottom: 4px;
+}
+.feature-card p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+@media(max-width: 820px) {
+  .details-body { grid-template-columns: 1fr; }
 }

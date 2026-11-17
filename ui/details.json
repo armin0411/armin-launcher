@@ -1,0 +1,779 @@
+{
+  "photocraft": {
+    "about": "Layers, masks, adjustment layers, layer styles, type, vectors and brushes in a native app. Open source, offline, and yours.\n\nPhotoCraft keeps the menus, shortcuts and panels your hands already know, so there is nothing to relearn.",
+    "features": [
+      {
+        "text": "No Electron and no web view: a fast native compositor.",
+        "title": "Native GPU canvas"
+      },
+      {
+        "text": "Opens and saves layered PSD and PSB documents.",
+        "title": "Real layered files"
+      },
+      {
+        "text": "Adjustment layers, live-preview filters, smart objects and layer styles.",
+        "title": "Non-destructive editing"
+      },
+      {
+        "text": "Subject and object selection and mask refinement run locally.",
+        "title": "On-device selection"
+      },
+      {
+        "text": "8-, 16- and 32-bit RGB, CMYK, Lab and Grayscale, with ICC color management and soft proofing.",
+        "title": "Serious color"
+      }
+    ],
+    "shots": [
+      {
+        "caption": "Curves and type layers",
+        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/photocraft/demo.jpg"
+      },
+      {
+        "caption": "Levels with a live histogram",
+        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/photocraft/adjustments.jpg"
+      }
+    ]
+  },
+  "vectorcraft": {
+    "about": "A native vector illustration app with the pen, panels and shortcuts illustrators expect. Open source, and it also runs in a browser.",
+    "features": [
+      {
+        "text": "Pen, direct selection, shape booleans, snapping guides and an appearance panel, laid out the way you expect.",
+        "title": "The workflow you know"
+      },
+      {
+        "text": "Drawings with thousands of shapes stay responsive on a retina display.",
+        "title": "Genuinely fast"
+      },
+      {
+        "text": "Shape booleans work on the exact curves, so there is no \"cannot perform operation\", and undo is unlimited.",
+        "title": "Booleans that don't fail"
+      },
+      {
+        "text": "Blends, envelope distort, gradient mesh, repeats, glows and drop shadows all stay editable.",
+        "title": "Live, editable effects"
+      },
+      {
+        "text": "Turn raster images into clean vector paths, with presets for the common cases.",
+        "title": "Image tracing"
+      },
+      {
+        "text": "Native JSON documents, SVG and PDF import and export, and PNG, JPEG and WebP output.",
+        "title": "Open formats"
+      }
+    ],
+    "shots": [
+      {
+        "caption": "The Neon Drive poster",
+        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/vectorcraft/neon.jpg"
+      },
+      {
+        "caption": "Live blends",
+        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/vectorcraft/ribbons.jpg"
+      }
+    ]
+  },
+  "filmcraft": {
+    "about": "A native video editor with source and program monitors, a real timeline and every trim mode.",
+    "features": [
+      {
+        "text": "Source and program monitors, three-point editing, every trim mode and J/K/L trimming.",
+        "title": "A timeline you already know"
+      },
+      {
+        "text": "An integer timebase keeps 23.976 and 29.97 drop-frame footage exact, with no drift.",
+        "title": "Frame-exact time"
+      },
+      {
+        "text": "No FFmpeg inside: native support for H.264, HEVC, ProRes, VP9, AAC and Opus.",
+        "title": "Its own codecs"
+      },
+      {
+        "text": "Curves, color wheels, HSL secondaries, LUTs and HDR and log workflows, with scopes to check the result.",
+        "title": "Color grading"
+      },
+      {
+        "text": "Video effects and transitions, keyframes with value and velocity graphs, and a linear-light GPU compositor.",
+        "title": "Effects and keyframes"
+      },
+      {
+        "text": "EBU R128 loudness meters, a mixer with automation and native audio effects.",
+        "title": "Broadcast-ready audio"
+      }
+    ],
+    "shots": [
+      {
+        "caption": "The Color workspace, with scopes",
+        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/filmcraft/color.jpg"
+      },
+      {
+        "caption": "The Assembly workspace",
+        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/filmcraft/assembly.jpg"
+      }
+    ]
+  },
+  "lightcraft": {
+    "about": "A fast photo library and non-destructive raw developer. No account, no cloud, no telemetry and no subscription.",
+    "features": [
+      {
+        "text": "A wide-gamut, 32-bit float pipeline that never touches your originals.",
+        "title": "Non-destructive by design"
+      },
+      {
+        "text": "Light, color, effects, tone curve, a color mixer, color grading wheels and built-in presets.",
+        "title": "Every control you reach for"
+      },
+      {
+        "text": "Brush, gradient and range masks, plus sky, subject and background masks.",
+        "title": "Precise masking"
+      },
+      {
+        "text": "Support for the main camera raw formats: DNG, CR2, ARW, NEF, RAF, RW2, PEF and ORF.",
+        "title": "Native raw decoding"
+      },
+      {
+        "text": "Albums, ratings, flags and search, with grids that stay smooth on large catalogs.",
+        "title": "A library that keeps up"
+      },
+      {
+        "text": "The GPU pipeline updates the preview as you move a slider, even on large raw files.",
+        "title": "Instant feedback"
+      }
+    ],
+    "shots": [
+      {
+        "caption": "The Edit view",
+        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/lightcraft/hero.jpg"
+      },
+      {
+        "caption": "The tone curve",
+        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/lightcraft/curve.jpg"
+      }
+    ]
+  },
+  "pdfcraft": {
+    "about": "Read, organize, combine, split and secure PDFs in a fast, native app. No account, no telemetry and no cloud.",
+    "features": [
+      {
+        "text": "World scripts, vertical Japanese, color emoji and transparency.",
+        "title": "Faithful rendering"
+      },
+      {
+        "text": "Instant find, and text selection that follows the document's real reading order.",
+        "title": "Search as you type"
+      },
+      {
+        "text": "Rotate, delete, insert and reorder pages, with deep undo behind every change.",
+        "title": "Organize like cards"
+      },
+      {
+        "text": "Assemble and break apart documents while keeping links, form fields, layers and bookmarks intact.",
+        "title": "Combine, extract, split"
+      },
+      {
+        "text": "Incremental, atomic saves with autosave and crash recovery.",
+        "title": "Fearless saves"
+      },
+      {
+        "text": "Opens files from RC4 to AES-256 encryption and honors the author's permissions.",
+        "title": "Built-in security"
+      }
+    ],
+    "shots": []
+  },
+  "effectcraft": {
+    "about": "A native compositor with compositions, layers, keyframes, effects, expressions, 3D cameras and lights, and a render queue. Young, moving fast, and already usable.",
+    "features": [
+      {
+        "text": "Familiar panels and keyframes (linear, bezier, hold and eased), with a graph editor for value and speed curves.",
+        "title": "Animate the way you know"
+      },
+      {
+        "text": "Solids, shapes, text, footage, nested compositions, nulls and adjustment layers, with parenting, track mattes and blend modes.",
+        "title": "Layers of every kind"
+      },
+      {
+        "text": "Blur, color correction, distortion, generators, keying, particles and simulation, stylize and time effects.",
+        "title": "A large effects library"
+      },
+      {
+        "text": "3D layers with cameras, depth of field, and lights that cast soft ray-traced shadows.",
+        "title": "Real 3D"
+      },
+      {
+        "text": "JavaScript expressions with wiggle, loops and layer references, edited inline.",
+        "title": "Expressions"
+      },
+      {
+        "text": "H.264 and ProRes with alpha, PNG, TIFF and EXR sequences, GIF, and Lottie import and export.",
+        "title": "Export anywhere"
+      }
+    ],
+    "shots": [
+      {
+        "caption": "An animated composition",
+        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/effectcraft/hero.jpg"
+      },
+      {
+        "caption": "The Graph Editor",
+        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/effectcraft/graph.jpg"
+      }
+    ]
+  },
+  "anicraft": {
+    "about": "Open-source 2D vector animation, built in pure Rust.",
+    "features": [
+      {
+        "text": "Stage, tools, timeline, layers, keyframes, Properties and Library sit where animators expect them, with onion skinning for in-betweening.",
+        "title": "Familiar by design"
+      },
+      {
+        "text": "Classic tweens with eight easing presets and custom ease curves, plus shape tweens that morph one vector contour into another.",
+        "title": "Tweens that ease"
+      },
+      {
+        "text": "Graphic symbols and movie clips with nested timelines and loop modes, mask and guide layers, filters, blend modes and scenes.",
+        "title": "Symbols and scenes"
+      },
+      {
+        "text": "Pen, Pencil with curve fitting, shapes, text, Paint Bucket and Ink Bottle, with B\u00e9zier anchors and handles you edit point by point.",
+        "title": "Real vector tools"
+      },
+      {
+        "text": "Opens .fla and .xfl documents and imports SVG. Exports PNG sequences, GIF, SVG frames, sprite sheets, Lottie, and WebM or MP4 through your own FFmpeg.",
+        "title": "Open formats"
+      },
+      {
+        "text": "Every action is an engine command, so the CLI, a JSON-lines channel and an MCP server can draw, animate and export the way a person does.",
+        "title": "Agent-ready"
+      }
+    ],
+    "shots": []
+  },
+  "designcraft": {
+    "about": "A native layout app with spreads, parent pages, threaded stories, styles, swatches, text wrap and a paragraph composer. No subscription, no license server and no telemetry.",
+    "features": [
+      {
+        "text": "Spreads and parent pages, frames and threaded stories, with paragraph and character styles.",
+        "title": "The layout tools you know"
+      },
+      {
+        "text": "A Knuth\u2013Plass paragraph composer, dictionary hyphenation, optical margin alignment and baseline grids, with line breaks that match on screen and in PDF.",
+        "title": "Beautiful type"
+      },
+      {
+        "text": "Real selectable text with embedded fonts, CMYK and spot colors, bleed, crop marks and PDF/A output.",
+        "title": "Print-ready PDF"
+      },
+      {
+        "text": "Multithreaded rendering, instant undo and cached text composition.",
+        "title": "Fast"
+      },
+      {
+        "text": "A documented native format, PNG export and layout interchange import and export.",
+        "title": "Open formats"
+      },
+      {
+        "text": "Every menu item, tool, panel and dialog can be driven over a JSON control channel and an MCP server.",
+        "title": "Built for automation"
+      }
+    ],
+    "shots": [
+      {
+        "caption": "A magazine spread with a threaded story",
+        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/designcraft/spread.jpg"
+      }
+    ]
+  },
+  "figcraft": {
+    "about": "Design screens, components and prototypes in a native app that opens instantly and works offline, with no account and no telemetry. Early alpha.",
+    "features": [
+      {
+        "text": "Rows, columns, wrap and grids with padding, gaps and Hug, Fill or Fixed sizing, plus constraints and layout grids.",
+        "title": "Auto layout"
+      },
+      {
+        "text": "Instances with overrides, variants and properties, styles, and variables with modes bound to fills, strokes and effects.",
+        "title": "Components"
+      },
+      {
+        "text": "Real vector networks, the pen and pencil, the shape builder, editable booleans and variable width strokes.",
+        "title": "Vectors"
+      },
+      {
+        "text": "Connections, triggers and animated transitions, variables with conditionals, flows and a presentation view with device frames.",
+        "title": "Prototypes"
+      },
+      {
+        "text": "Inspect mode with measurements, annotations, ready-for-dev status, and code for CSS, HTML, React, SwiftUI and Compose.",
+        "title": "Hand off"
+      },
+      {
+        "text": "Plain .figcraft files on your own disk. SVG, PNG, JPEG, WebP and PDF in and out, and .fig files open, best effort.",
+        "title": "Your files"
+      }
+    ],
+    "shots": []
+  },
+  "wordcraft": {
+    "about": "A word processor with the ribbon, shortcuts and behavior you already know. Open source, and built from public specifications.",
+    "features": [
+      {
+        "text": "Ribbon tabs and groups, a live Styles gallery and the editing behavior you expect, from list continuation to Format Painter.",
+        "title": "Familiar"
+      },
+      {
+        "text": "Opens and saves .docx, and also .odt, .rtf, .html, .md, .tex and .txt. Opens older .doc files and exports PDF with real, selectable text.",
+        "title": "Your files"
+      },
+      {
+        "text": "Paragraph layout is cached, so typing stays responsive even in long documents.",
+        "title": "Fast"
+      },
+      {
+        "text": "Spelling, grammar and everything else work offline.",
+        "title": "Private"
+      },
+      {
+        "text": "Work on macOS, Windows, Linux, BSD and the web.",
+        "title": "Everywhere"
+      },
+      {
+        "text": "Every action is a command, driven from the ribbon, shortcuts, a command-line tool, a JSON control channel or an MCP server.",
+        "title": "Built for agents"
+      }
+    ],
+    "shots": [
+      {
+        "caption": "The Home tab and the Navigation pane",
+        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/wordcraft/hero.jpg"
+      },
+      {
+        "caption": "Track Changes and comments",
+        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/wordcraft/review.jpg"
+      }
+    ]
+  },
+  "soundcraft": {
+    "about": "A digital audio workstation that follows the workflow audio engineers already know: an Edit window for arranging and editing, and a Mix window for balancing. Pre-alpha.",
+    "features": [
+      {
+        "text": "Shuffle, Slip, Spot and Grid modes, Smart, Grabber, Trim and other tools, fades and crossfades, playlists with comping lanes and clip gain.",
+        "title": "Editing"
+      },
+      {
+        "text": "Faders and pans with automation, sends, busses, aux inputs, VCA masters, routing folders and automatic plugin delay compensation.",
+        "title": "Mixing"
+      },
+      {
+        "text": "Volume, pan, mute, send and every plugin parameter, with Write, Touch, Latch and Trim passes recorded live from the faders.",
+        "title": "Automation"
+      },
+      {
+        "text": "EQ, dynamics, reverbs, modulation effects, a subtractive synth and a drum synth, all original, and CLAP plugins load too.",
+        "title": "Plugins"
+      }
+    ],
+    "shots": [
+      {
+        "caption": "The Edit window with a nine-track session",
+        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/soundcraft/edit.jpg"
+      },
+      {
+        "caption": "The Mix window",
+        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/soundcraft/mix.jpg"
+      }
+    ]
+  },
+  "deckcraft": {
+    "about": "A presentation app with slide masters, shapes, animations and a presenter view. In alpha, heading for beta.",
+    "features": [
+      {
+        "text": "Slide masters and layouts with placeholders that inherit formatting, themes, sections, notes and comments.",
+        "title": "Make decks"
+      },
+      {
+        "text": "Preset shapes with adjust handles, connectors that stay glued to shapes, freeform tools, merged shapes, gradients, shadows and glow.",
+        "title": "Draw"
+      },
+      {
+        "text": "In-place text editing with full font and paragraph formatting, bullets and numbering, columns and autofit.",
+        "title": "Write"
+      },
+      {
+        "text": "Pictures with crop and corrections, styled tables, charts, audio and video.",
+        "title": "Add content"
+      },
+      {
+        "text": "Transitions including Morph, animations and motion paths, a full-screen slide show, presenter view and rehearsed timings.",
+        "title": "Present"
+      },
+      {
+        "text": "Opens and saves .pptx presentation files and exports PDF (slides, notes pages and handouts), PNG and JPEG.",
+        "title": "Exchange files"
+      }
+    ],
+    "shots": [
+      {
+        "caption": "Editing a slide, with sections and notes",
+        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/deckcraft/editor.jpg"
+      },
+      {
+        "caption": "The Shape Format tab",
+        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/deckcraft/shape.jpg"
+      }
+    ]
+  },
+  "cadcraft": {
+    "about": "A drafting app with the command line, object snaps and workflow that drafters already know. Free, with no account and no subscription. In early, fast development.",
+    "features": [
+      {
+        "text": "Type L, click two points, type @5<45 and press Enter. Prompts with clickable keywords, polar tracking, direct distance entry and grips work the way drafting habit expects.",
+        "title": "The workflow you know"
+      },
+      {
+        "text": "Reads and writes DXF natively (R12 through 2018) and opens and saves DWG (R13 through 2018). Exports SVG and PNG.",
+        "title": "Open files"
+      },
+      {
+        "text": "A responsive, native drafting workspace.",
+        "title": "Fast and native"
+      },
+      {
+        "text": "Draw, modify, dimension, hatch and block commands, layers with a properties manager, paper-space layouts and PDF plotting.",
+        "title": "A full drafting toolset"
+      },
+      {
+        "text": "Every menu item, tool and prompt is a command, available over MCP, a JSON control channel or the CLI.",
+        "title": "Built for agents"
+      }
+    ],
+    "shots": [
+      {
+        "caption": "An apartment floor plan",
+        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/cadcraft/apartment.jpg"
+      },
+      {
+        "caption": "A mechanical bracket drawing",
+        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/cadcraft/bracket.jpg"
+      }
+    ]
+  },
+  "gridcraft": {
+    "about": "A spreadsheet with the ribbon, formula bar, sheet tabs and shortcuts you know. No subscription, no license server and no telemetry.",
+    "features": [
+      {
+        "text": "The ribbon, formula bar, Name Box, fill handle, point-mode formulas, Format Cells, Paste Special, conditional formatting, tables and charts.",
+        "title": "Familiar"
+      },
+      {
+        "text": "XLSX is the native format, with formulas, tables, conditional formats, charts, pivot tables and print settings round-tripping. CSV and TSV too.",
+        "title": "Compatible"
+      },
+      {
+        "text": "A dependency-graph calculation engine with dynamic arrays, LET and LAMBDA, structured table references, sort, AutoFilter and Flash Fill.",
+        "title": "Capable"
+      },
+      {
+        "text": "Copy-on-write workbooks, incremental recalculation and a grid that only lays out what is on screen.",
+        "title": "Fast"
+      },
+      {
+        "text": "Every ribbon button, menu item, dialog and keystroke is a command, available over a JSON control channel, an MCP server or the CLI.",
+        "title": "Agent-native"
+      },
+      {
+        "text": "Work on the desktop and the web.",
+        "title": "Everywhere"
+      }
+    ],
+    "shots": [
+      {
+        "caption": "A quarterly sales dashboard",
+        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/gridcraft/hero.jpg"
+      },
+      {
+        "caption": "A household budget",
+        "url": "https://raw.githubusercontent.com/storytold/craft-launcher-assets/v1/gridcraft/budget.jpg"
+      }
+    ]
+  },
+  "texturecraft": {
+    "about": "Paint materials on 3D models and export textures.",
+    "features": [
+      {
+        "text": "Paint materials on 3D models and export textures.",
+        "title": "Materials"
+      },
+      {
+        "text": "Bake mesh maps and use smart materials.",
+        "title": "Mesh maps"
+      }
+    ],
+    "shots": []
+  },
+  "materialcraft": {
+    "about": "Create tileable PBR materials and export texture maps.",
+    "features": [
+      {
+        "text": "Combine noises, patterns and filters.",
+        "title": "Node graphs"
+      },
+      {
+        "text": "Preview materials in 2D and on 3D models.",
+        "title": "Live previews"
+      }
+    ],
+    "shots": []
+  },
+  "craft-anything": {
+    "about": "Point it at a target and say what you want. It studies the original with real inspection tools, has a coding agent build a new project in the stack you ask for, checks the result against the original and refines it. Open source and clean-room.",
+    "features": [
+      {
+        "text": "Websites, desktop apps, phone apps, games and files: find out how they're built, with the evidence behind every answer.",
+        "title": "Study anything"
+      },
+      {
+        "text": "Say what you want and a coding agent builds a new project in the language or engine you name.",
+        "title": "Build your own"
+      },
+      {
+        "text": "Every build is compared with the original, at three screen widths for a page, and refined until it's close.",
+        "title": "Checked, not guessed"
+      },
+      {
+        "text": "Every tool is a CLI command and an MCP tool, and no AI is needed just to inspect.",
+        "title": "Agent-ready"
+      }
+    ],
+    "shots": []
+  },
+  "solidcraft": {
+    "about": "A parametric solid modeller by Tangency Labs. Sketch, constrain and build solids on an editable feature timeline: change a dimension and the model rebuilds. Early, but usable for simple parts. Open source, and it can be driven by AI agents through its MCP server.",
+    "features": [
+      {
+        "text": "Lines, arcs, splines and text, solved by SolidCraft's own constraint solver, with parameter-driven dimensions.",
+        "title": "Sketches and constraints"
+      },
+      {
+        "text": "Extrude, revolve, sweep, loft, fillet, chamfer, shell, holes, threads and patterns on a parametric timeline.",
+        "title": "Features"
+      },
+      {
+        "text": "STEP, IGES, 3MF, STL, OBJ and glTF in and out where supported, and .sc designs.",
+        "title": "Files"
+      },
+      {
+        "text": "A desktop app, a browser app, a headless CLI and an MCP server, all running the same commands.",
+        "title": "Desktop, web and agents"
+      }
+    ],
+    "shots": []
+  },
+  "mailcraft": {
+    "about": "An open-source mail program by UCS Care Group, written from scratch in Rust: the folder pane, message list and reading pane people already know, with a calendar, people and to-dos. Works with Microsoft 365, Outlook.com and IMAP. In public beta, and it can be driven by AI agents through its MCP server.",
+    "features": [
+      {
+        "text": "Conversations, flags, categories, rules, search with a query language, and HTML mail shown without running anything in it.",
+        "title": "Mail"
+      },
+      {
+        "text": "Day, week and month views, recurring meetings, invitations and reminders, kept in step with Microsoft 365.",
+        "title": "Calendar"
+      },
+      {
+        "text": ".eml, .mbox, .ics and .vcf in and out, and the mail and contacts of an Outlook .pst file in.",
+        "title": "Files"
+      },
+      {
+        "text": "A desktop app, a browser app, a CLI and an MCP server, all running the same commands.",
+        "title": "Desktop, web and agents"
+      }
+    ],
+    "shots": []
+  },
+  "godot": {
+    "about": "A feature-packed, cross-platform 2D and 3D game engine with a unified node-and-scene architecture, built-in GDScript, C#, and GDExtension support.",
+    "features": [
+      {
+        "title": "2D & 3D engines",
+        "text": "Dedicated 2D pixel-coordinate renderer alongside a modern Vulkan/Forward+ 3D renderer."
+      },
+      {
+        "title": "Scene & node tree",
+        "text": "Compose reusable scenes, inherit behaviors, and iterate rapidly with live scene editing."
+      },
+      {
+        "title": "GDScript & C#",
+        "text": "Write gameplay in Python-like GDScript, C#, or native C/C++/Rust via GDExtension."
+      },
+      {
+        "title": "Cross-platform export",
+        "text": "Export to Linux, Windows, macOS, Android, iOS, and WebAssembly from one project."
+      }
+    ],
+    "shots": [
+      {
+        "caption": "Godot 3D & 2D editor",
+        "url": "https://godotengine.org/assets/home/hero-image.webp"
+      }
+    ]
+  },
+  "blender": {
+    "about": "The free and open-source 3D creation suite supporting modeling, sculpting, rigging, animation, simulation, rendering, compositing, and video editing.",
+    "features": [
+      {
+        "title": "Cycles & EEVEE",
+        "text": "Path-traced photorealistic rendering with Cycles and real-time PBR viewport rendering with EEVEE."
+      },
+      {
+        "title": "Modeling & Sculpting",
+        "text": "Subdivision surfaces, Geometry Nodes, dynamic topology sculpting, and UV unwrapping."
+      },
+      {
+        "title": "Animation & Rigging",
+        "text": "Armatures, constraints, Grease Pencil 2D-in-3D animation, and nonlinear action editing."
+      },
+      {
+        "title": "Python scripting",
+        "text": "Full Python API for custom tools, add-ons, and automated pipelines."
+      }
+    ],
+    "shots": [
+      {
+        "caption": "Blender 3D viewport",
+        "url": "https://www.blender.org/wp-content/uploads/2023/11/blender_40_splash_by_artist_studio.jpg"
+      }
+    ]
+  },
+  "krita": {
+    "about": "A professional free and open-source painting program made by artists for concept art, texture and matte painters, illustrations, and comics.",
+    "features": [
+      {
+        "title": "Brush engines",
+        "text": "Over 100 customizable brushes with stabilizers, smudge engines, and texture presets."
+      },
+      {
+        "title": "Wrap-around & symmetry",
+        "text": "Seamless tile painting and multi-axis mirror tools for textures and patterns."
+      },
+      {
+        "title": "Layer & color management",
+        "text": "Vector, filter, and group layers with full OpenColorIO and CMYK/HDR support."
+      },
+      {
+        "title": "2D frame animation",
+        "text": "Timeline, onion skinning, and audio sync for traditional frame-by-frame animation."
+      }
+    ],
+    "shots": []
+  },
+  "inkscape": {
+    "about": "A professional vector graphics editor for illustrators, designers, and web artists using the open W3C SVG standard.",
+    "features": [
+      {
+        "title": "Precision vector paths",
+        "text": "Bezier, spiro, and node editing with boolean operations and live path effects."
+      },
+      {
+        "title": "Native SVG workflow",
+        "text": "Clean, standards-compliant SVG output alongside PDF, EPS, PNG, and DXF export."
+      },
+      {
+        "title": "Text & typography",
+        "text": "Multi-line text, text-on-path, kerning, and variable font support."
+      }
+    ],
+    "shots": []
+  },
+  "audacity": {
+    "about": "An easy-to-use, multi-track audio editor and recorder for podcasts, music, sound effects, and voice-overs.",
+    "features": [
+      {
+        "title": "Multi-track recording",
+        "text": "Record live audio from microphones, mixers, or loopback devices with low-latency monitoring."
+      },
+      {
+        "title": "Non-destructive effects",
+        "text": "Real-time EQ, compression, noise reduction, pitch/tempo shifting, and VST3/LV2/AU plugins."
+      },
+      {
+        "title": "Spectral view",
+        "text": "Visualize and clean up frequencies directly in spectrogram mode."
+      }
+    ],
+    "shots": []
+  },
+  "kdenlive": {
+    "about": "An open-source non-linear video editor built on MLT and FFmpeg, supporting multi-track timelines, keyframeable effects, and proxy editing.",
+    "features": [
+      {
+        "title": "Multi-track timeline",
+        "text": "Mix video, audio, and title tracks with nested timelines and slip/slide trimming."
+      },
+      {
+        "title": "Broad format support",
+        "text": "Edit almost any camera or screen-recording codec natively via FFmpeg."
+      },
+      {
+        "title": "Effects & color grading",
+        "text": "Scopes, LUTs, keyframes, motion tracking, and hardware-accelerated encoding."
+      }
+    ],
+    "shots": []
+  },
+  "pcbcraft": {
+    "about": "Electronics design and PCB layout built in Rust for both human engineers and AI agents to work on the same board with unified undo/redo.",
+    "features": [
+      {
+        "title": "Schematic & PCB sync",
+        "text": "Familiar KiCad-style schematic capture, footprint assignment, and copper layout."
+      },
+      {
+        "title": "Agent-native MCP",
+        "text": "Built-in Model Context Protocol server and shared command history."
+      },
+      {
+        "title": "Manufacturing outputs",
+        "text": "Design rule checks (DRC), Gerber, and Excellon drill file export."
+      }
+    ],
+    "shots": []
+  },
+  "fieldcraft": {
+    "about": "Open-source multi-physics simulation and CAE modeler built from scratch in pure Rust: parametric part in, verified results out.",
+    "features": [
+      {
+        "title": "FEA, heat & CFD",
+        "text": "Nonlinear implicit/explicit finite element analysis, heat transfer, and lattice Boltzmann CFD."
+      },
+      {
+        "title": "Automatic meshing",
+        "text": "All-hex, tet, and octree meshing with persistent B-Rep face associativity."
+      },
+      {
+        "title": "Solver deck export",
+        "text": "Generate analysis decks compatible with Abaqus, Nastran, and LS-DYNA."
+      }
+    ],
+    "shots": []
+  },
+  "lemon-studio": {
+    "about": "A free, open-source pattern-based digital audio workstation written from scratch in Rust with native .flp project compatibility.",
+    "features": [
+      {
+        "title": "Pattern workflow",
+        "text": "Step sequencer, instrument rack, piano roll, playlist arranger, and routable mixer."
+      },
+      {
+        "title": "Plugin hosting",
+        "text": "Native support for CLAP, VST3, and VST2 instruments and effects."
+      },
+      {
+        "title": "Sample-accurate Rust engine",
+        "text": "Low-latency audio engine with a fast CPU-rendered interface."
+      }
+    ],
+    "shots": []
+  }
+}

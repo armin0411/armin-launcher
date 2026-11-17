@@ -193,6 +193,8 @@ class Engine:
         self.busy = False
         self.refreshing = False
         self.cancel = threading.Event()
+        self.pkg_lock = threading.Lock()
+        self.active_workers = 0
         self.worker = None
         self.notice = ''
         self.last_error = ''
@@ -441,13 +443,22 @@ class Engine:
             self.refreshing = False
 
     def start(self, action, ids=None):
+        terminal = ('Complete', 'Cancelled', 'Error')
         with self.lock:
-            if self.busy:
-                raise ValueError('Another task is running')
+            if action == 'refresh':
+                if self.busy:
+                    raise ValueError('Another task is running')
+            else:
+                if self.refreshing:
+                    raise ValueError('Refresh is running')
+                if ids and any(self.jobs.get(i, {}).get('status') not in (None, *terminal) for i in ids):
+                    raise ValueError('This app already has an active task')
+            self.active_workers += 1
             self.busy = True
             self.refreshing = action == 'refresh'
             self.last_error = ''
-            self.cancel.clear()
+            if self.active_workers == 1:
+                self.cancel.clear()
         def work():
             try:
                 if action == 'refresh':
@@ -464,14 +475,18 @@ class Engine:
                 self.emit('error', {'message': str(e)})
             finally:
                 with self.lock:
-                    self.busy = False
-                    self.refreshing = False
+                    self.active_workers = max(0, self.active_workers - 1)
+                    self.busy = self.active_workers > 0
+                    if action == 'refresh':
+                        self.refreshing = False
                 try:
                     self.emit('state', self.snapshot())
                 except (ValueError, OSError) as e:
                     self.emit('error', {'message': f'Catalog reload failed: {e}'})
-        self.worker = threading.Thread(target=work, name='launchcraft-job', daemon=action == 'refresh')
-        self.worker.start()
+        worker = threading.Thread(target=work, name='launchcraft-job', daemon=action == 'refresh')
+        if action == 'refresh':
+            self.worker = worker
+        worker.start()
         self.emit('state', self.snapshot())
 
     def download(self, asset, checksum=None, appid='', cancel=None):
@@ -573,18 +588,21 @@ class Engine:
         return h.hexdigest()
 
     def transaction(self, argv, ids):
-        if self.cancel.is_set():
-            raise Cancelled()
         for appid in ids:
-            self.status(appid, 'Installing', message='Authentication may be required. Package transactions finish safely before cancellation.')
-        # Do not terminate pacman in the middle of its database transaction.
-        with tempfile.TemporaryFile(mode='w+') as output:
-            process = subprocess.Popen(argv, stdout=output, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
-            process.wait()
-            output.seek(0)
-            log = output.read()[-10000:]
-            if process.returncode:
-                raise ValueError(f'Installer exited {process.returncode}: {log.strip()}')
+            self.status(appid, 'Queued', message='Waiting for package manager queue…')
+        with self.pkg_lock:
+            if self.cancel.is_set():
+                raise Cancelled()
+            for appid in ids:
+                self.status(appid, 'Installing', message='Authentication may be required. Package transactions finish safely before cancellation.')
+            # Do not terminate pacman in the middle of its database transaction.
+            with tempfile.TemporaryFile(mode='w+') as output:
+                process = subprocess.Popen(argv, stdout=output, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+                process.wait()
+                output.seek(0)
+                log = output.read()[-10000:]
+                if process.returncode:
+                    raise ValueError(f'Installer exited {process.returncode}: {log.strip()}')
 
     def app(self, appid):
         return next((a for a in self.catalog.load()['apps'] if a['id'] == appid), None)
@@ -887,13 +905,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self.json(200, dict(self.server.engine.snapshot(), token=self.server.token))
             except (ValueError, OSError) as e:
                 self.json(500, {'error': str(e)})
-        elif path in ('/', '/index.html', '/style.css', '/app.js'):
+        elif path in ('/', '/index.html', '/style.css', '/app.js', '/details.json'):
             file = ROOT / 'ui' / ('index.html' if path == '/' else path[1:])
             body = file.read_bytes()
             self.send_response(200)
             self.send_header('Content-Type', mimetypes.guess_type(str(file))[0] or 'application/octet-stream')
             self.send_header('Content-Length', str(len(body)))
-            self.send_header('Content-Security-Policy', "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'")
+            self.send_header('Content-Security-Policy', "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; img-src 'self' data: https:; base-uri 'none'; frame-ancestors 'none'")
             self.send_header('X-Content-Type-Options', 'nosniff')
             self.send_header('Cache-Control', 'no-cache')
             self.end_headers()
