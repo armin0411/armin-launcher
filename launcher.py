@@ -356,6 +356,8 @@ class Engine:
             e.close()
             if e.code == 304 and 'body' in cached:
                 body = cached['body']
+            elif e.code == 404:
+                return dict(tag=None, notes='No releases published yet.', url=f'{self.web_base}/{src["repo"]}/releases', checked=time.time())
             elif e.code in (403, 429):
                 return self.github_fallback(app)
             else:

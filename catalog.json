@@ -553,6 +553,46 @@
         "launch": "lemonstudio"
       },
       "hidden": false
+    },
+    {
+      "id": "concat",
+      "name": "Concat",
+      "publisher": "jub0t",
+      "category": "Video",
+      "tagline": "Open-source, local-first video editor built in Rust",
+      "accent": "#3b82f6",
+      "website": "https://github.com/jub0t/Concat",
+      "source": {
+        "type": "github_release",
+        "repo": "jub0t/Concat",
+        "asset_pattern": "Concat-*-x86_64.AppImage"
+      },
+      "install": {
+        "type": "appimage",
+        "binary_name": "concat.AppImage",
+        "launch": "concat.AppImage"
+      },
+      "hidden": false
+    },
+    {
+      "id": "rigby2d",
+      "name": "Rigby2D",
+      "publisher": "Jaisurya Chandrasekar",
+      "category": "Animation",
+      "tagline": "Open-source 2D skeletal animation editor and runtime suite",
+      "accent": "#f97316",
+      "website": "https://github.com/jaisurya-dev-art/rigby2d",
+      "source": {
+        "type": "github_release",
+        "repo": "jaisurya-dev-art/rigby2d",
+        "asset_pattern": "Rigby2D_*_amd64.AppImage"
+      },
+      "install": {
+        "type": "appimage",
+        "binary_name": "rigby2d.AppImage",
+        "launch": "rigby2d.AppImage"
+      },
+      "hidden": false
     }
   ]
 }

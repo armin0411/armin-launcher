@@ -775,5 +775,41 @@
       }
     ],
     "shots": []
+  },
+  "concat": {
+    "about": "Concat is a local-first, cross-platform video editor built in Rust with GPU-accelerated rendering, multi-track timelines, local Whisper auto-captions, and 4K 60fps export.",
+    "features": [
+      {
+        "title": "Rust media engine",
+        "text": "Zero garbage-collector pauses with GPU-accelerated compositing and FFmpeg export."
+      },
+      {
+        "title": "Local AI tools",
+        "text": "On-device Whisper auto-captions, background cutout, and audio separation."
+      },
+      {
+        "title": "Automation & MCP",
+        "text": "Built-in JSON-RPC API and Model Context Protocol server for scripted editing."
+      }
+    ],
+    "shots": []
+  },
+  "rigby2d": {
+    "about": "Rigby2D is an open-source 2D skeletal animation editor and runtime suite for games and films, featuring mesh deformation, IK constraints, lip-sync, and engine runtimes.",
+    "features": [
+      {
+        "title": "Rigging & Mesh Deformation",
+        "text": "Weighted mesh deformation, layered PSD/PNG import, and AutoRig setup."
+      },
+      {
+        "title": "IK & Physics Constraints",
+        "text": "Inverse Kinematics, path, transform, slider, and spring/physics constraints."
+      },
+      {
+        "title": "Engine Runtimes & MCP",
+        "text": "Native runtimes for Godot, Rust, WebGL, Defold, and Unity, plus an MCP server."
+      }
+    ],
+    "shots": []
   }
 }
