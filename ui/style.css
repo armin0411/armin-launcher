@@ -91,39 +91,43 @@ a { color: var(--accent); text-underline-offset: 3px; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 0;
+  padding: 9px 0;
   border-bottom: 1px solid var(--line);
+  gap: 12px;
 }
-.identity { display: flex; gap: 14px; align-items: center; }
+.identity { display: flex; gap: 10px; align-items: center; min-width: 0; }
 .logo {
   display: block;
   position: relative;
-  font-size: 36px;
+  font-size: 21px;
   font-weight: 800;
   color: var(--strong);
   line-height: 1;
-  width: 42px;
-  height: 42px;
+  width: 26px;
+  height: 26px;
   border: 1px solid var(--line);
-  padding: 2px 7px;
+  padding: 2px 4px;
+  flex-shrink: 0;
 }
 .logo span {
   position: absolute;
-  font-size: 18px;
-  right: 0;
-  top: -5px;
+  font-size: 11px;
+  right: -2px;
+  top: -3px;
   color: var(--accent);
   background: var(--bg);
 }
-h1 { font-size: 24px; letter-spacing: -1px; font-weight: 700; margin: 0; }
+h1 { font-size: 16px; letter-spacing: -.4px; font-weight: 700; margin: 0; white-space: nowrap; }
 .title-dot { color: var(--accent); }
+.mast-sep { width: 1px; height: 14px; background: var(--line); flex-shrink: 0; }
 .eyebrow, .mono, .badge, .counts, .filters span, .toolbar select, footer, .table-head, .status-pill {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
-.eyebrow { font-size: 10px; letter-spacing: 1.4px; color: var(--ink-soft); font-weight: 600; }
-.identity p { margin: 4px 0 0; }
-.mast-actions { display: flex; gap: 8px; align-items: center; }
-.mast-actions #theme { font-size: 18px; padding: 6px 11px; }
+.eyebrow { font-size: 10px; letter-spacing: 1.2px; color: var(--muted); font-weight: 600; white-space: nowrap; }
+.identity p { margin: 0; }
+.mast-actions { display: flex; gap: 6px; align-items: center; }
+.mast-actions #theme { font-size: 15px; padding: 5px 9px; }
+.mast-actions #add { padding: 5px 10px; font-size: 12px; }
 
 /* Toolbar: Filters + Inline Counts + Controls */
 .toolbar {
@@ -244,6 +248,7 @@ main.grid {
   position: relative;
   min-width: 0;
   cursor: pointer;
+  transition: border-color .18s ease, background .18s ease;
 }
 .card:before {
   content: "";
@@ -253,6 +258,52 @@ main.grid {
   bottom: -1px;
   width: 3px;
   background: var(--app-accent);
+  opacity: 0;
+  transition: opacity .18s ease;
+}
+.card:hover,
+.card:focus-within {
+  border-color: color-mix(in srgb, var(--app-accent) 45%, var(--line));
+  background: var(--hover);
+}
+.card:hover:before,
+.card:focus-within:before {
+  opacity: 1;
+}
+.card.is-not-installed .app-icon img {
+  filter: grayscale(1) opacity(0.6);
+  transition: filter .2s ease, opacity .2s ease;
+}
+.card.is-not-installed:hover .app-icon img,
+.card.is-not-installed:focus-within .app-icon img {
+  filter: grayscale(0) opacity(1);
+}
+.card .app-title h3 .name-accent,
+.card .app-title h3 .name-main {
+  transition: color .18s ease;
+}
+.card.is-not-installed .app-title h3 .name-accent,
+.card.is-not-installed .app-title h3 .name-main {
+  color: var(--ink);
+}
+.card.is-installed .app-title h3 .name-accent,
+.card:hover .app-title h3 .name-accent,
+.card:focus-within .app-title h3 .name-accent {
+  color: var(--app-accent);
+}
+.card.is-installed .app-title h3 .name-main {
+  color: color-mix(in srgb, var(--app-accent) 28%, var(--strong));
+}
+.card.is-not-installed:hover .app-title h3 .name-main,
+.card.is-not-installed:focus-within .app-title h3 .name-main {
+  color: color-mix(in srgb, var(--app-accent) 45%, var(--strong));
+}
+.last-updated {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  opacity: .8;
+  margin-bottom: 10px;
 }
 .card-inner { padding: 15px 16px 13px; }
 .app-top { display: flex; align-items: center; gap: 11px; }
@@ -680,10 +731,10 @@ dialog::backdrop { background: #000a; backdrop-filter: blur(3px); }
 @media(max-width: 760px) {
   #shell { padding: 0 14px; }
   .masthead { padding: 14px 0; }
-  .identity { gap: 10px; }
-  h1 { font-size: 21px; }
-  .identity .eyebrow { font-size: 8.5px; }
-  .logo { width: 36px; height: 36px; font-size: 29px; }
+  .identity { gap: 8px; }
+  h1 { font-size: 15px; }
+  .identity .eyebrow, .mast-sep { display: none; }
+  .logo { width: 24px; height: 24px; font-size: 19px; }
   .mast-actions { gap: 5px; }
   .mast-actions button { padding: 7px 9px; }
   .toolbar-top { gap: 10px; padding: 8px 0; }

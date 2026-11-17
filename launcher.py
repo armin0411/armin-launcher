@@ -374,7 +374,7 @@ class Engine:
         if len(matches) != 1:
             raise ValueError(f'Asset pattern {pattern!r} matched {len(matches)} files; choose exactly one')
         checksum = next((a for a in assets if a['name'].lower() in ('sha256sums.txt', 'sha256sums', 'sha256sum.txt')), None)
-        return dict(tag=tag, asset=matches[0], checksum=checksum, notes=body.get('body') or '', url=body.get('html_url', app['website']), checked=time.time())
+        return dict(tag=tag, asset=matches[0], checksum=checksum, notes=body.get('body') or '', url=body.get('html_url', app['website']), published_at=body.get('published_at'), checked=time.time())
 
     def github_fallback(self, app):
         src = app['source']

@@ -109,6 +109,20 @@ function menu(a) {
   const jobActive = a.job && !terminal.includes(a.job.status) && state.busy;
   return `<div class="menu-wrap"><button class="menu-button" data-action="menu" aria-label="Menu for ${escapeHTML(a.name)}" aria-expanded="false">···</button><div class="app-menu" hidden><button data-action="details">Details / Release notes</button><a href="${escapeHTML(repo)}" target="_blank" rel="noopener noreferrer">Open Repo ↗</a><button data-action="hide">${a.hidden ? 'Unhide' : 'Hide'} app</button><button data-action="uninstall" class="danger" ${!a.installed || jobActive ? 'disabled' : ''}>Uninstall</button></div></div>`;
 }
+function formatReleased(a) {
+  const raw = a.release?.published_at;
+  if (!raw) return '';
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'});
+}
+function formatAppName(name) {
+  const s = String(name ?? '');
+  if (s.endsWith('Craft') && s.length > 5) {
+    return `${escapeHTML(s.slice(0, -5))}<span class="name-accent">Craft</span>`;
+  }
+  return `<span class="name-main">${escapeHTML(s)}</span>`;
+}
 function appIdentity(a, withTagline = false) {
   const icon = a.icon
     ? `<div class="app-icon has-img" aria-hidden="true"><img src="${escapeHTML(a.icon)}" alt="" loading="lazy"></div>`
@@ -116,7 +130,7 @@ function appIdentity(a, withTagline = false) {
   const sub = withTagline
     ? `<p class="tagline" title="${escapeHTML(a.tagline)}">${escapeHTML(a.tagline)}</p>`
     : `<span class="publisher">${escapeHTML(a.publisher)}</span>`;
-  return `<div class="app-top">${icon}<div class="app-title"><h3>${escapeHTML(a.name)}</h3>${sub}</div></div>`;
+  return `<div class="app-top">${icon}<div class="app-title"><h3>${formatAppName(a.name)}</h3>${sub}</div></div>`;
 }
 function renderApps() {
   const query = $('#search').value.toLocaleLowerCase();
@@ -131,15 +145,18 @@ function renderApps() {
   shownApps = apps;
   const container = $('#apps');
   container.className = view;
-  let html = view === 'list' && apps.length ? '<div class="table-head" aria-hidden="true"><span>APP</span><span>STATUS</span><span>CATEGORY / PUBLISHER</span><span>INSTALLED → LATEST</span><span style="text-align:right">ACTION</span><span></span></div>' : '';
+  let html = view === 'list' && apps.length ? '<div class="table-head" aria-hidden="true"><span>APP</span><span>STATUS</span><span>CATEGORY / RELEASED</span><span>INSTALLED → LATEST</span><span style="text-align:right">ACTION</span><span></span></div>' : '';
   html += apps.map(a => {
     const accent = /^#[0-9a-f]{6}$/i.test(a.accent) ? a.accent : '#2d81ff';
     const badge = `<span class="badge">${escapeHTML(a.category)}</span>`;
+    const released = formatReleased(a);
+    const releasedLine = released ? `<span class="last-updated">Last updated: ${escapeHTML(released)}</span>` : '';
     const tagline = `<p class="tagline">${escapeHTML(a.tagline)}</p>`;
+    const cardState = a.installed ? 'is-installed' : 'is-not-installed';
     const content = view === 'list'
-      ? `<div class="card-inner">${appIdentity(a, true)}<div class="status-cell">${statusBadge(a)}</div><div class="category-cell">${badge}<span class="publisher">${escapeHTML(a.publisher)}</span></div>${versions(a)}<div class="list-action">${action(a)}</div>${menu(a)}</div>`
-      : `<div class="card-inner"><div class="app-top">${appIdentity(a, false).replace(/^<div class="app-top">|<\/div>$/g,'')}${menu(a)}</div>${tagline}<div class="app-meta">${badge}${versions(a)}</div></div><div class="card-bottom">${statusBadge(a)}${action(a)}</div>`;
-    return `<article class="card" data-id="${escapeHTML(a.id)}" style="--app-accent:${accent}">${content}</article>`;
+      ? `<div class="card-inner">${appIdentity(a, true)}<div class="status-cell">${statusBadge(a)}</div><div class="category-cell">${badge}<span class="publisher">${escapeHTML(released || a.publisher)}</span></div>${versions(a)}<div class="list-action">${action(a)}</div>${menu(a)}</div>`
+      : `<div class="card-inner"><div class="app-top">${appIdentity(a, false).replace(/^<div class="app-top">|<\/div>$/g,'')}${menu(a)}</div>${tagline}${releasedLine}<div class="app-meta">${badge}${versions(a)}</div></div><div class="card-bottom">${statusBadge(a)}${action(a)}</div>`;
+    return `<article class="card ${cardState}" data-id="${escapeHTML(a.id)}" style="--app-accent:${accent}">${content}</article>`;
   }).join('');
   container.innerHTML = html;
   $('#empty').hidden = apps.length !== 0;
@@ -327,12 +344,12 @@ function closeMenus() {
 }
 document.addEventListener('click', event => {if (!event.target.closest('.menu-wrap')) closeMenus();});
 document.addEventListener('mousedown', event => {
-  if ($('#modal').open || document.activeElement !== $('#search')) return;
-  if (!event.target.closest('input, select, textarea, a, #modal')) event.preventDefault();
+  if ($('#modal').open || $('#lightbox').open || document.activeElement !== $('#search')) return;
+  if (!event.target.closest('input, select, textarea, a, #modal, #lightbox')) event.preventDefault();
 });
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape') closeMenus();
-  if (!event.ctrlKey && !event.metaKey && !event.altKey && !$('#modal').open && event.key.length === 1 && !event.target.closest('input, select, textarea, #modal')) {
+  if (!event.ctrlKey && !event.metaKey && !event.altKey && !$('#modal').open && !$('#lightbox').open && (event.key.length === 1 || event.key === 'Backspace') && !event.target.closest('input, select, textarea, #modal, #lightbox')) {
     $('#search').focus({preventScroll: true});
   }
   if (!event.ctrlKey && !event.metaKey) return;
@@ -396,6 +413,9 @@ function manageProfiles() {
 $('#add-profile').onclick = manageProfiles;
 renderProfiles();
 $('#modal-close').onclick = () => $('#modal').close();
+$('#modal').addEventListener('close', () => {
+  if (!$('#lightbox').open) $('#search').focus({preventScroll: true});
+});
 $('#modal').addEventListener('click', event => {if (event.target === $('#modal')) {const r = $('#modal').getBoundingClientRect(); if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) $('#modal').close();}});
 let lbZoom = 1;
 function applyLightboxZoom(value) {
