@@ -667,12 +667,15 @@ class Engine:
                         install_windows_shortcut(app['name'], str(target))
                     elif not IS_WIN:
                         self.desktop(app, target)
+                    self.sync_mcp(app)
                 elif ins['type'] == 'winget':
                     if not shutil.which('winget'):
                         raise ValueError('winget is not installed on this Windows system')
                     self.transaction(['winget', 'install', '--id', ins['package'], '-e', '--accept-package-agreements', '--accept-source-agreements'], [appid])
+                    self.sync_mcp(app)
                 elif ins['type'] == 'pacman':
                     self.transaction([*self.privilege_cmd(), 'pacman', '-S', '--needed', '--noconfirm', ins['package']], [appid])
+                    self.sync_mcp(app)
                 elif ins['type'] == 'aur':
                     helper = shutil.which('yay') or shutil.which('paru')
                     if not helper:
@@ -680,6 +683,7 @@ class Engine:
                     priv = self.privilege_cmd()
                     sudo_args = ['--sudo', priv[0], '--sudoflags', ' '.join(priv[1:])] if priv else []
                     self.transaction([helper, '-S', '--needed', '--noconfirm', *sudo_args, ins['package']], [appid])
+                    self.sync_mcp(app)
                 else:
                     raise ValueError(f'Installer type {ins["type"]} is not yet implemented on {self.platform}')
                 self.status(appid, 'Complete', message=verification if app['source']['type'] == 'github_release' else 'Package installation completed')
@@ -687,6 +691,7 @@ class Engine:
                 self.transaction([*self.privilege_cmd(), 'pacman', '-U', '--noconfirm', *[str(p) for _, p, _, _ in packages]], [a['id'] for a, _, _, _ in packages])
                 for app, path, tag, verification in packages:
                     self.record(app, tag, path, verification)
+                    self.sync_mcp(app)
                     self.status(app['id'], 'Complete', message=verification)
             self.notice = 'All requested installs completed' if chosen else 'Everything is up to date'
         except Exception as e:
@@ -775,6 +780,72 @@ class Engine:
             if staging.exists():
                 shutil.rmtree(staging)
 
+    def mcp_spec(self, app):
+        appid = app['id']
+        # Known CLI/MCP binaries shipped by apps in the catalog.
+        candidates = [f'{appid}-cli']
+        launch = shlex.split(app['install']['launch'], posix=not IS_WIN)[0]
+        if appid in ('fieldcraft', 'concat'):
+            candidates.append(launch)
+        for cmd in candidates:
+            resolved = shutil.which(cmd)
+            if resolved:
+                return {'command': resolved, 'args': ['mcp']}
+        return None
+
+    def sync_mcp(self, app, remove=False):
+        appid = app['id']
+        spec = None if remove else self.mcp_spec(app)
+        if not remove and not spec:
+            return
+        # 1. JSON-based MCP configs (Antigravity, Claude Code, Claude Desktop)
+        json_configs = [
+            self.home / '.gemini/config/mcp_config.json',
+            self.home / '.claude.json',
+        ]
+        if IS_WIN and os.environ.get('APPDATA'):
+            json_configs.append(Path(os.environ['APPDATA']) / 'Claude/claude_desktop_config.json')
+        elif IS_MAC:
+            json_configs.append(self.home / 'Library/Application Support/Claude/claude_desktop_config.json')
+        else:
+            json_configs.append(self.home / '.config/Claude/claude_desktop_config.json')
+
+        for cfg in json_configs:
+            if not cfg.is_file():
+                continue
+            try:
+                data = json.loads(cfg.read_text())
+                if not isinstance(data, dict):
+                    continue
+                servers = data.setdefault('mcpServers', {})
+                if not isinstance(servers, dict):
+                    continue
+                if remove:
+                    if appid in servers:
+                        servers.pop(appid, None)
+                        atomic_json(cfg, data)
+                else:
+                    servers[appid] = spec
+                    atomic_json(cfg, data)
+            except (OSError, ValueError):
+                pass
+
+        # 2. Codex TOML config (~/.codex/config.toml)
+        codex_cfg = self.home / '.codex/config.toml'
+        if codex_cfg.is_file():
+            try:
+                text = codex_cfg.read_text()
+                header = f'[mcp_servers.{appid}]'
+                pattern = re.compile(rf'(?ms)^\[mcp_servers\.{re.escape(appid)}\]\n.*?(?=^\[|\Z)')
+                text = pattern.sub('', text).rstrip() + '\n'
+                if not remove:
+                    args_toml = ', '.join(json.dumps(a) for a in spec['args'])
+                    block = f'\n{header}\ncommand = {json.dumps(spec["command"])}\nargs = [{args_toml}]\n'
+                    text = text + block
+                codex_cfg.write_text(text)
+            except OSError:
+                pass
+
     def record(self, app, version, path, verification):
         with self.lock:
             self.state['installed'][app['id']] = dict(version=version, path=str(path), verification=verification, date=time.time())
@@ -827,6 +898,7 @@ class Engine:
                     shutil.rmtree(base)
             if not IS_WIN:
                 (self.home / '.local/share/applications' / f'launchcraft-{appid}.desktop').unlink(missing_ok=True)
+            self.sync_mcp(app, remove=True)
             self.state['installed'].pop(appid, None)
             self.save()
             self.status(appid, 'Complete')
