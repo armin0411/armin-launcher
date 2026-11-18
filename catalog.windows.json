@@ -557,6 +557,48 @@
         "launch": "rigby2d"
       },
       "hidden": false
+    },
+    {
+      "id": "artcraft",
+      "name": "ArtCraft",
+      "publisher": "Storytold",
+      "category": "Creative",
+      "tagline": "Intentional crafting engine for artists, designers, and filmmakers",
+      "accent": "#6366f1",
+      "website": "https://getartcraft.com",
+      "source": {
+        "type": "github_release",
+        "repo": "storytold/artcraft",
+        "asset_pattern": "ArtCraft_*_x64_en-US.msi",
+        "prerelease": false
+      },
+      "install": {
+        "type": "msi",
+        "package": "ArtCraft",
+        "launch": "artcraft"
+      },
+      "hidden": false
+    },
+    {
+      "id": "craft-launcher",
+      "name": "Craft Launcher",
+      "publisher": "Storytold",
+      "category": "Utilities",
+      "tagline": "The Craft App Launcher for Storytold crafting applications",
+      "accent": "#8b5cf6",
+      "website": "https://github.com/storytold/craft-launcher",
+      "source": {
+        "type": "github_release",
+        "repo": "storytold/craft-launcher",
+        "asset_pattern": "artcraft-launcher-*-windows-x64.msi",
+        "prerelease": false
+      },
+      "install": {
+        "type": "msi",
+        "package": "artcraft-launcher",
+        "launch": "artcraft-launcher"
+      },
+      "hidden": false
     }
   ]
 }

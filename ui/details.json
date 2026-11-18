@@ -245,7 +245,7 @@
         "title": "Symbols and scenes"
       },
       {
-        "text": "Pen, Pencil with curve fitting, shapes, text, Paint Bucket and Ink Bottle, with B\u00e9zier anchors and handles you edit point by point.",
+        "text": "Pen, Pencil with curve fitting, shapes, text, Paint Bucket and Ink Bottle, with Bézier anchors and handles you edit point by point.",
         "title": "Real vector tools"
       },
       {
@@ -276,7 +276,7 @@
         "title": "The layout tools you know"
       },
       {
-        "text": "A Knuth\u2013Plass paragraph composer, dictionary hyphenation, optical margin alignment and baseline grids, with line breaks that match on screen and in PDF.",
+        "text": "A Knuth–Plass paragraph composer, dictionary hyphenation, optical margin alignment and baseline grids, with line breaks that match on screen and in PDF.",
         "title": "Beautiful type"
       },
       {
@@ -919,5 +919,45 @@
         "url": "/shots/armin-calendar-1.png"
       }
     ]
+  },
+  "artcraft": {
+    "about": "ArtCraft Studio is Storytold's open-source creative engine and node-based IDE for artists, designers, and filmmakers—combining AI image and video generation with real-time compositing and native hardware acceleration.",
+    "features": [
+      {
+        "title": "Visual node workflows",
+        "text": "Chain image, video, and generative pipelines in an interactive node graph built for artists and filmmakers."
+      },
+      {
+        "title": "Local & cloud AI models",
+        "text": "Run local diffusion and video models or connect external providers in one unified workspace."
+      },
+      {
+        "title": "Native desktop performance",
+        "text": "Hardware-accelerated rendering and media pipelines packaged cleanly for Linux, macOS, and Windows."
+      }
+    ],
+    "shots": [
+      {
+        "caption": "ArtCraft Studio",
+        "url": "/shots/artcraft-1.png"
+      }
+    ],
+    "accent2": "#7f58ff"
+  },
+  "craft-launcher": {
+    "about": "The Craft App Launcher. Contribute to storytold/craft-launcher development by creating an account on GitHub.",
+    "features": [
+      {
+        "title": "Craft Launcher",
+        "text": "The Craft App Launcher. Contribute to storytold/craft-launcher development by creating an account on GitHub."
+      }
+    ],
+    "shots": [
+      {
+        "caption": "Craft Launcher preview",
+        "url": "/shots/craft-launcher-1.png"
+      }
+    ],
+    "accent2": "#a74eff"
   }
 }

@@ -402,6 +402,7 @@ class ServerTests(Fixture):
                 '/api/prefs',
                 {
                     'ai_provider': 'gemini',
+                    'ai_thinking': 'low',
                     'ai_base_url': 'http://localhost:11434/v1',
                     'ai_selected_models': {'gemini': 'gemini-2.5-pro', 'openai': 'gpt-4.1'},
                 },
@@ -411,6 +412,7 @@ class ServerTests(Fixture):
             status, state = self.request(server, '/api/state')
             self.assertEqual(status, 200)
             self.assertEqual(state['prefs']['ai_provider'], 'gemini')
+            self.assertEqual(state['prefs']['ai_thinking'], 'low')
             self.assertEqual(state['prefs']['ai_base_url'], 'http://localhost:11434/v1')
             self.assertEqual(state['prefs']['ai_selected_models']['gemini'], 'gemini-2.5-pro')
 
@@ -542,6 +544,56 @@ class AiMaintainTests(Fixture):
                 engine.install_many(['lemon-studio'], allow_build=False)
         finally:
             mod.ROOT = old_root
+
+    def test_launchable_check_and_terminal_builtins(self):
+        app_path = self.home / 'Applications' / 'sample.AppImage'
+        app_path.parent.mkdir(parents=True)
+        app_path.write_text('#!/bin/sh\necho ok\n')
+        app_path.chmod(0o644)
+        engine = self.engine()
+        app = {
+            'id': 'sample',
+            'name': 'Sample',
+            'source': {'type': 'github_release', 'repo': 'a/b', 'asset_pattern': '*.AppImage'},
+            'install': {'type': 'appimage', 'binary_name': 'sample.AppImage', 'launch': 'sample.AppImage'},
+        }
+        res = engine.check_launchable(app)
+        self.assertTrue(res['installed'])
+        self.assertFalse(res['ok'])
+        self.assertTrue(res.get('fixable_chmod'))
+
+        app_path.chmod(0o755)
+        res2 = engine.check_launchable(app)
+        self.assertTrue(res2['ok'])
+
+        engine.terminal_exec('help')
+        self.assertIn('Built-ins: clear, pwd, cd', engine.ai_report)
+        engine.terminal_exec('clear')
+        self.assertEqual(engine.ai_report, '')
+        engine.terminal_exec('!echo hello-term')
+        deadline = time.time() + 3
+        while engine.ai_running and time.time() < deadline:
+            time.sleep(0.05)
+        self.assertIn('hello-term', engine.ai_report)
+
+    def test_codex_subscription_reads_models_cache(self):
+        codex_dir = self.home / '.codex'
+        codex_dir.mkdir(parents=True)
+        atomic_json(codex_dir / 'models_cache.json', {
+            'models': [
+                {'slug': 'gpt-6.2-sol', 'visibility': 'list'},
+                {'slug': 'gpt-6.2-astra', 'visibility': 'list'},
+                {'slug': 'hidden-internal', 'visibility': 'hide'},
+            ]
+        })
+        engine = self.engine()
+        prev = os.environ.pop('CODEX_HOME', None)
+        try:
+            models = engine.fetch_ai_models('subscription', base_url='codex')
+        finally:
+            if prev is not None:
+                os.environ['CODEX_HOME'] = prev
+        self.assertEqual(models, ['gpt-6.2-sol', 'gpt-6.2-astra'])
 
 
 if __name__ == '__main__':

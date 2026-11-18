@@ -594,6 +594,48 @@
         "launch": "armin-calendar-launch"
       },
       "hidden": false
+    },
+    {
+      "id": "artcraft",
+      "name": "ArtCraft",
+      "publisher": "Storytold",
+      "category": "Creative",
+      "tagline": "Intentional crafting engine for artists, designers, and filmmakers",
+      "accent": "#6366f1",
+      "website": "https://getartcraft.com",
+      "source": {
+        "type": "github_release",
+        "repo": "storytold/artcraft",
+        "asset_pattern": "artcraft-*-linux-x86_64.AppImage",
+        "prerelease": false
+      },
+      "install": {
+        "type": "appimage",
+        "binary_name": "artcraft.AppImage",
+        "launch": "artcraft.AppImage"
+      },
+      "hidden": false
+    },
+    {
+      "id": "craft-launcher",
+      "name": "Craft Launcher",
+      "publisher": "Storytold",
+      "category": "Utilities",
+      "tagline": "The Craft App Launcher for Storytold crafting applications",
+      "accent": "#8b5cf6",
+      "website": "https://github.com/storytold/craft-launcher",
+      "source": {
+        "type": "github_release",
+        "repo": "storytold/craft-launcher",
+        "asset_pattern": "artcraft-launcher-*-linux-x86_64.AppImage",
+        "prerelease": false
+      },
+      "install": {
+        "type": "appimage",
+        "binary_name": "craft-launcher.AppImage",
+        "launch": "craft-launcher.AppImage"
+      },
+      "hidden": true
     }
   ]
 }

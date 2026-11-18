@@ -412,13 +412,36 @@ function render() {
   else if (state.busy) setNotice('Working — keep this window open to follow progress.');
   else setNotice(state.notice || 'Ready. Refresh to check the latest releases.', !!state.last_error);
   const aiLog = $('#ai-log');
-  if (aiLog && state.ai_report) {
+  if (aiLog) {
+    const text = state.ai_report || 'Ready. Type a message for the AI or !command to run locally (help, clear, cd, ls…).';
     const atBottom = aiLog.scrollHeight - aiLog.scrollTop - aiLog.clientHeight < 24;
-    aiLog.textContent = state.ai_report;
-    if (state.ai_running || atBottom) aiLog.scrollTop = aiLog.scrollHeight;
+    if (aiLog.textContent !== text) {
+      aiLog.textContent = text;
+      if (state.ai_running || atBottom) aiLog.scrollTop = aiLog.scrollHeight;
+    }
+  }
+  const aiWorking = $('#ai-working');
+  if (aiWorking) {
+    const hasErr = /(^|\n)Error:/i.test(state.ai_report || '');
+    aiWorking.hidden = !state.ai_running || hasErr;
+  }
+  const aiFixes = $('#ai-fixes');
+  if (aiFixes) {
+    const fixes = state.pending_fixes || [];
+    aiFixes.hidden = !fixes.length;
+    aiFixes.innerHTML = fixes.map(f => `<div class="ai-fix-row"><div class="ai-fix-meta"><strong>${escapeHTML(f.title)}</strong><code>${escapeHTML(f.cmd)}</code></div><button type="button" class="${f.needs_admin ? 'danger-btn' : 'primary'}" data-fix-id="${escapeHTML(f.id)}" data-admin="${f.needs_admin ? '1' : '0'}" ${state.ai_running ? 'disabled' : ''}>${f.needs_admin ? 'Run (Admin)' : 'Run Fix'}</button></div>`).join('');
+  }
+  const termInput = $('#ai-term-input');
+  if (termInput && state.term_cwd) {
+    termInput.title = 'Working directory: ' + state.term_cwd;
   }
   const aiBtn = $('#ai-maintain');
-  if (aiBtn) aiBtn.disabled = !!(state.busy || state.ai_running);
+  if (aiBtn) {
+    aiBtn.disabled = false;
+    aiBtn.textContent = state.ai_running ? '✦ AI Running…' : '✦ AI Maintain';
+  }
+  const aiSubmit = $('#ai-form button[type=submit]');
+  if (aiSubmit) aiSubmit.disabled = !!state.ai_running;
   renderApps();
 }
 function showModal(title, content, wide = false) {
@@ -795,6 +818,8 @@ function loadAiPrefs() {
   return {
     ai_provider: sp.ai_provider || local.ai_provider || 'openai',
     ai_base_url: sp.ai_base_url ?? local.ai_base_url ?? '',
+    ai_sub_cli: sp.ai_sub_cli || local.ai_sub_cli || 'opencode',
+    ai_thinking: sp.ai_thinking || local.ai_thinking || 'auto',
     ai_selected_models: {...(local.ai_selected_models || {}), ...(sp.ai_selected_models || {})},
   };
 }
@@ -803,6 +828,8 @@ function persistAiPrefs(patch) {
   const next = {
     ai_provider: patch.ai_provider ?? cur.ai_provider,
     ai_base_url: patch.ai_base_url ?? cur.ai_base_url,
+    ai_sub_cli: patch.ai_sub_cli ?? cur.ai_sub_cli,
+    ai_thinking: patch.ai_thinking ?? cur.ai_thinking,
     ai_selected_models: {...cur.ai_selected_models, ...(patch.ai_selected_models || {})},
   };
   try { localStorage.setItem('launchcraft-ai-prefs', JSON.stringify(next)); } catch {}
@@ -816,12 +843,15 @@ function openAiMaintain() {
     gemini: {models: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'], placeholder: 'AIza...'},
     openrouter: {models: ['openai/gpt-4o-mini', 'anthropic/claude-3.5-sonnet', 'google/gemini-2.5-flash'], placeholder: 'sk-or-...'},
     custom: {models: ['llama3.2', 'qwen2.5', 'mistral'], placeholder: 'Optional for local (e.g. Ollama)'},
+    subscription: {models: ['gpt-5.4', 'sonnet', 'gemini-2.5-pro', 'gemini-2.5-flash'], placeholder: ''},
   };
-  showModal('AI Maintain (Hybrid)', `<p class="muted" style="margin:0 0 14px">Python gathers live GitHub/AUR release facts and checks local icons/screenshots, then your chosen AI proposes validated updates.</p><form id="ai-form" class="form-grid"><label><span class="field-label">AI Provider</span><select name="provider"><option value="openai">OpenAI (ChatGPT)</option><option value="anthropic">Anthropic (Claude)</option><option value="gemini">Google Gemini</option><option value="openrouter">OpenRouter</option><option value="custom">Custom / Local (Ollama, etc.)</option></select></label><label><span class="field-label">Model <span class="field-hint" id="ai-model-hint">(auto-updates)</span></span><select name="model_select"></select></label><label class="full" id="ai-custom-model-wrap" hidden><span class="field-label">Custom Model Name</span><input name="model_custom" placeholder="Enter exact model ID"></label><label class="full" id="ai-base-wrap" hidden><span class="field-label">Base URL <span class="field-hint">(e.g. http://localhost:11434/v1)</span></span><input name="base_url" placeholder="http://localhost:11434/v1"></label><label class="full"><span class="field-label">API Key <span class="field-hint" id="ai-key-hint"></span></span><div class="ai-key-row"><select name="key_select"></select><button type="button" id="ai-key-delete" title="Remove selected saved key">Remove</button></div></label><div class="full ai-new-key-grid" id="ai-new-key-wrap" hidden><label><span class="field-label">New API Key</span><input name="api_key" type="password" placeholder="sk-..."></label><label><span class="field-label">Label <span class="field-hint">(optional)</span></span><div class="ai-key-row"><input name="key_label" placeholder="e.g. Work, Personal"><button type="button" id="ai-key-save">Save Key</button></div></label></div><label class="full"><span class="field-label">App to add or check <span class="field-hint">(optional)</span></span><input name="prompt" placeholder="Leave blank for full catalog audit, or e.g. Zed"></label><div class="modal-actions full"><button type="button" id="ai-refresh-models">Refresh Models</button><button type="button" id="ai-cancel">Close</button><button type="submit" class="primary">Run AI Maintain</button></div></form><pre id="ai-log" class="release-notes" style="margin-top:14px">${escapeHTML(state.ai_report || 'Ready.')}</pre>`);
+  showModal('AI Maintain (Hybrid)', `<p class="muted" style="margin:0 0 14px">Python gathers live GitHub/AUR release facts, checks local icons/screenshots and app launchability, then your chosen AI proposes validated updates or fixes.</p><form id="ai-form" class="form-grid"><label><span class="field-label">AI Provider</span><select name="provider"><option value="openai">OpenAI (ChatGPT)</option><option value="anthropic">Anthropic (Claude)</option><option value="gemini">Google Gemini</option><option value="openrouter">OpenRouter</option><option value="subscription">Subscription Account (OpenCode / Codex / Claude / Gemini)</option><option value="custom">Custom / Local (Ollama, etc.)</option></select></label><label><span class="field-label">Model <span class="field-hint" id="ai-model-hint">(auto-updates)</span></span><select name="model_select"></select></label><label class="full" id="ai-custom-model-wrap" hidden><span class="field-label">Custom Model Name</span><input name="model_custom" placeholder="Enter exact model ID"></label><label class="full" id="ai-sub-wrap" hidden><span class="field-label">Subscription CLI <span class="field-hint">(uses your logged-in ChatGPT / Claude / Gemini subscription)</span></span><div class="ai-key-row"><select name="sub_cli"><option value="opencode">OpenCode (opencode)</option><option value="codex">Codex / ChatGPT Plus (codex)</option><option value="claude">Claude Code (claude)</option><option value="gemini">Gemini CLI (gemini)</option></select><button type="button" id="ai-sub-login">Sign in…</button></div></label><label class="full" id="ai-base-wrap" hidden><span class="field-label">Base URL <span class="field-hint">(e.g. http://localhost:11434/v1)</span></span><input name="base_url" placeholder="http://localhost:11434/v1"></label><label class="full" id="ai-key-wrap"><span class="field-label">API Key <span class="field-hint" id="ai-key-hint"></span></span><div class="ai-key-row"><select name="key_select"></select><button type="button" id="ai-key-delete" title="Remove selected saved key">Remove</button></div></label><div class="full ai-new-key-grid" id="ai-new-key-wrap" hidden><label><span class="field-label">New API Key</span><input name="api_key" type="password" placeholder="sk-..."></label><label><span class="field-label">Label <span class="field-hint">(optional)</span></span><div class="ai-key-row"><input name="key_label" placeholder="e.g. Work, Personal"><button type="button" id="ai-key-save">Save Key</button></div></label></div><label><span class="field-label">Thinking Level</span><select name="thinking"><option value="auto">Auto (Default)</option><option value="low">Low (Fast / Cheap)</option><option value="medium">Medium</option><option value="high">High (Deep)</option></select></label><label><span class="field-label">App to add or check <span class="field-hint">(optional)</span></span><input name="prompt" placeholder="Leave blank for full audit, or e.g. Zed"></label><div class="modal-actions full"><button type="button" id="ai-refresh-models">Refresh Models</button><button type="button" id="ai-cancel">Close</button><button type="submit" class="primary">Run AI Maintain</button></div></form><div class="ai-terminal"><pre id="ai-log" class="release-notes">${escapeHTML(state.ai_report || 'Ready. Type a message for the AI or !command to run locally (help, clear, cd, ls…).')}</pre><div id="ai-working" class="ai-working" hidden><span class="ai-working-left"><span class="ai-working-dot" aria-hidden="true"></span><span class="ai-working-text">Working…</span></span><button type="button" id="ai-stop" class="ai-stop">Stop</button></div><div id="ai-fixes" class="ai-fixes" hidden></div><form id="ai-term-bar" class="ai-term-bar"><span class="ai-term-prompt" aria-hidden="true">&gt;</span><input id="ai-term-input" autocomplete="off" placeholder="Ask the AI, or run !cmd (help, clear, cd, ls, sudo…)"><button type="submit" id="ai-term-send">Send</button><button type="button" id="ai-term-clear" title="Clear terminal (Ctrl+L)">Clear</button></form></div>`);
   const form = $('#ai-form');
   const aiPrefs = loadAiPrefs();
   if (defaults[aiPrefs.ai_provider]) form.elements.provider.value = aiPrefs.ai_provider;
   if (aiPrefs.ai_base_url) form.elements.base_url.value = aiPrefs.ai_base_url;
+  if (aiPrefs.ai_sub_cli) form.elements.sub_cli.value = aiPrefs.ai_sub_cli;
+  if (['auto', 'low', 'medium', 'high'].includes(aiPrefs.ai_thinking)) form.elements.thinking.value = aiPrefs.ai_thinking;
   const populateModels = (provider, list, useRemembered = false) => {
     const sel = form.elements.model_select;
     const remembered = loadAiPrefs().ai_selected_models?.[provider] || '';
@@ -862,12 +892,13 @@ function openAiMaintain() {
     form.elements.api_key.placeholder = cfg.placeholder;
     $('#ai-key-hint').textContent = list.length ? `(${list.length} saved locally)` : provider === 'custom' ? '(optional for local endpoints)' : '(stored locally only)';
   };
+  const effectiveBase = (p) => p === 'subscription' ? form.elements.sub_cli.value : form.elements.base_url.value.trim();
   const refreshModels = async (silent = true) => {
     const p = form.elements.provider.value;
-    const key = form.elements.key_select.value === '__new__' ? form.elements.api_key.value.trim() : '';
-    const keyId = form.elements.key_select.value !== '__new__' ? form.elements.key_select.value : '';
+    const key = p === 'subscription' ? '' : (form.elements.key_select.value === '__new__' ? form.elements.api_key.value.trim() : '');
+    const keyId = p === 'subscription' ? '' : (form.elements.key_select.value !== '__new__' ? form.elements.key_select.value : '');
     const keyLabel = form.elements.key_label.value.trim();
-    const base = form.elements.base_url.value.trim();
+    const base = effectiveBase(p);
     if (!silent) $('#ai-model-hint').textContent = '(refreshing…)';
     try {
       const res = await fetch('/api/ai_models', {method: 'POST', headers: {'Content-Type':'application/json', 'X-LaunchCraft-Token': token}, body: JSON.stringify({provider: p, api_key: key, key_id: keyId, key_label: keyLabel, base_url: base})});
@@ -883,14 +914,35 @@ function openAiMaintain() {
       if (!silent) $('#ai-model-hint').textContent = '(using defaults)';
     }
   };
+  const cachedModelsFor = (p) => p === 'subscription'
+    ? (state.ai_models?.[`subscription:${form.elements.sub_cli.value}`] || state.ai_models?.subscription)
+    : state.ai_models?.[p];
   const syncProvider = () => {
     const p = form.elements.provider.value;
+    const isSub = p === 'subscription';
     const saved = !!(state.ai_keys && state.ai_keys[p]);
-    populateModels(p, state.ai_models?.[p], true);
-    populateKeys(p);
+    const cached = cachedModelsFor(p);
+    populateModels(p, cached, true);
+    $('#ai-sub-wrap').hidden = !isSub;
+    $('#ai-key-wrap').hidden = isSub;
+    if (isSub) $('#ai-new-key-wrap').hidden = true;
+    else populateKeys(p);
     $('#ai-base-wrap').hidden = p !== 'custom';
-    $('#ai-model-hint').textContent = state.ai_models?.[p]?.length ? `(${state.ai_models[p].length} cached)` : '(defaults)';
-    if (saved || p === 'custom') refreshModels(true);
+    $('#ai-model-hint').textContent = cached?.length ? `(${cached.length} cached)` : '(defaults)';
+    if (saved || p === 'custom' || isSub) refreshModels(true);
+  };
+  form.elements.sub_cli.onchange = () => {
+    persistAiPrefs({ai_sub_cli: form.elements.sub_cli.value});
+    populateModels('subscription', cachedModelsFor('subscription'), true);
+    refreshModels(false);
+  };
+  $('#ai-sub-login').onclick = async () => {
+    try {
+      await api('ai_sub_login', {cli: form.elements.sub_cli.value});
+      setNotice(`Opened ${form.elements.sub_cli.value} login in your terminal.`);
+    } catch (err) {
+      setNotice(err.message, true);
+    }
   };
   form.elements.key_select.onchange = async () => {
     const p = form.elements.provider.value;
@@ -946,6 +998,7 @@ function openAiMaintain() {
   };
   form.elements.model_custom.onchange = saveCurrentModel;
   form.elements.base_url.onchange = () => persistAiPrefs({ai_base_url: form.elements.base_url.value.trim()});
+  form.elements.thinking.onchange = () => persistAiPrefs({ai_thinking: form.elements.thinking.value});
   $('#ai-refresh-models').onclick = () => refreshModels(false);
   syncProvider();
   $('#ai-cancel').onclick = () => $('#modal').close();
@@ -954,30 +1007,88 @@ function openAiMaintain() {
     const f = Object.fromEntries(new FormData(form));
     const model = f.model_select === '__custom__' ? f.model_custom.trim() : f.model_select;
     const isNewKey = f.key_select === '__new__';
-    persistAiPrefs({ai_provider: f.provider, ai_base_url: f.base_url || '', ...(model ? {ai_selected_models: {[f.provider]: model}} : {})});
+    persistAiPrefs({ai_provider: f.provider, ai_base_url: f.base_url || '', ai_sub_cli: f.sub_cli || 'opencode', ai_thinking: f.thinking || 'auto', ...(model ? {ai_selected_models: {[f.provider]: model}} : {})});
     const btn = $('button[type=submit]', form);
     btn.disabled = true;
     try {
       await api('ai_maintain', {
         provider: f.provider,
         model,
-        base_url: f.base_url || '',
-        api_key: isNewKey ? (f.api_key || '') : '',
-        key_label: isNewKey ? (f.key_label || '') : '',
-        key_id: isNewKey ? '' : (f.key_select || ''),
+        thinking: f.thinking || 'auto',
+        base_url: effectiveBase(f.provider),
+        api_key: (f.provider !== 'subscription' && isNewKey) ? (f.api_key || '') : '',
+        key_label: (f.provider !== 'subscription' && isNewKey) ? (f.key_label || '') : '',
+        key_id: (f.provider !== 'subscription' && !isNewKey) ? (f.key_select || '') : '',
         prompt: f.prompt || '',
       }, {timeoutMs: 60000});
       if (isNewKey && f.api_key?.trim()) {
         form.elements.api_key.value = '';
         form.elements.key_label.value = '';
       }
-      populateKeys(f.provider);
+      if (f.provider !== 'subscription') populateKeys(f.provider);
     } catch (error) {
-      $('#ai-log').textContent = 'Error: ' + error.message;
+      const aiLog = $('#ai-log');
+      aiLog.textContent = (aiLog.textContent ? aiLog.textContent + '\n' : '') + 'Error: ' + error.message;
+      aiLog.scrollTop = aiLog.scrollHeight;
     } finally {
       btn.disabled = false;
     }
   };
+  const termHistory = [];
+  let histIdx = 0;
+  const termInput = $('#ai-term-input');
+  $('#ai-stop').onclick = () => api('ai_cancel').catch(err => setNotice(err.message, true));
+  $('#ai-term-clear').onclick = () => api('ai_terminal', {input: 'clear'}).catch(err => setNotice(err.message, true));
+  termInput.addEventListener('keydown', e => {
+    if (e.key === 'ArrowUp' && termHistory.length) {
+      e.preventDefault();
+      histIdx = Math.max(0, histIdx - 1);
+      termInput.value = termHistory[histIdx] || '';
+    } else if (e.key === 'ArrowDown' && termHistory.length) {
+      e.preventDefault();
+      histIdx = Math.min(termHistory.length, histIdx + 1);
+      termInput.value = termHistory[histIdx] || '';
+    } else if (e.key.toLowerCase() === 'l' && e.ctrlKey) {
+      e.preventDefault();
+      api('ai_terminal', {input: 'clear'}).catch(() => {});
+    }
+  });
+  $('#ai-term-bar').onsubmit = async e => {
+    e.preventDefault();
+    const input = termInput.value.trim();
+    if (!input) return;
+    termHistory.push(input);
+    histIdx = termHistory.length;
+    termInput.value = '';
+    const f = Object.fromEntries(new FormData(form));
+    const model = f.model_select === '__custom__' ? f.model_custom.trim() : f.model_select;
+    try {
+      await api('ai_terminal', {
+        input,
+        provider: f.provider,
+        model,
+        thinking: f.thinking || 'auto',
+        base_url: effectiveBase(f.provider),
+        key_id: (f.provider !== 'subscription' && f.key_select !== '__new__') ? (f.key_select || '') : '',
+      }, {timeoutMs: 60000});
+    } catch (err) {
+      const aiLog = $('#ai-log');
+      aiLog.textContent = (aiLog.textContent ? aiLog.textContent + '\n' : '') + 'Error: ' + err.message;
+      aiLog.scrollTop = aiLog.scrollHeight;
+    }
+  };
+  $('#ai-fixes').onclick = async e => {
+    const btn = e.target.closest('button[data-fix-id]');
+    if (!btn) return;
+    const isAdmin = btn.dataset.admin === '1';
+    if (isAdmin && !window.confirm('This fix requires administrator privileges (pkexec). Run it now?')) return;
+    try {
+      await api('ai_fix', {id: btn.dataset.fixId});
+    } catch (err) {
+      $('#ai-log').textContent += '\nError: ' + err.message;
+    }
+  };
+  render();
 }
 $('#ai-maintain').onclick = openAiMaintain;
 $('#update-all').onclick = async () => {

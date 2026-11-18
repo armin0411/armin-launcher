@@ -201,6 +201,9 @@ class Engine:
         self.refreshing = False
         self.ai_running = False
         self.ai_report = ''
+        self.ai_cancel = threading.Event()
+        self.ai_proc = None
+        self.chat_history = []
         self.cancel = threading.Event()
         self.pkg_lock = threading.Lock()
         self.active_workers = 0
@@ -208,6 +211,8 @@ class Engine:
         self.notice = ''
         self.last_error = ''
         self.warnings = []
+        self.term_cwd = str(ROOT)
+        self.pending_fixes = []
 
     def save(self):
         with self.lock:
@@ -382,7 +387,7 @@ class Engine:
                 app['compatible'] = self.is_compatible(app)
                 app['data_paths'] = [str(p) for p in self.user_data_paths(app)]
                 app['build_info'] = self.app_build_info(app, details.get(app['id']), cpu['cores'])
-            return dict(apps=apps, busy=self.busy, refreshing=self.refreshing, ai_running=self.ai_running, ai_report=self.ai_report, ai_configured=bool(self.get_ai_key('openai')), ai_keys={p: bool(self.get_ai_key(p)) for p in ('openai', 'anthropic', 'gemini', 'openrouter', 'custom')}, ai_key_profiles={p: self.public_ai_keys(p) for p in ('openai', 'anthropic', 'gemini', 'openrouter', 'custom')}, ai_active_keys={p: self.active_ai_key_id(p) for p in ('openai', 'anthropic', 'gemini', 'openrouter', 'custom')}, ai_models=copy.deepcopy(self.state.get('ai_models', {})), notice=self.notice, last_error=self.last_error, warnings=self.warnings, platform=self.platform, cpu=cpu, prefs=copy.deepcopy(self.state.get('prefs', {})), revision=time.monotonic())
+            return dict(apps=apps, busy=self.busy, refreshing=self.refreshing, ai_running=self.ai_running, ai_report=self.ai_report, pending_fixes=copy.deepcopy(self.pending_fixes), term_cwd=self.term_cwd, ai_configured=bool(self.get_ai_key('openai')), ai_keys={p: bool(self.get_ai_key(p)) for p in ('openai', 'anthropic', 'gemini', 'openrouter', 'custom', 'subscription')}, ai_cli_tools={c: bool(shutil.which(c)) for c in ('opencode', 'codex', 'claude', 'gemini')}, ai_key_profiles={p: self.public_ai_keys(p) for p in ('openai', 'anthropic', 'gemini', 'openrouter', 'custom')}, ai_active_keys={p: self.active_ai_key_id(p) for p in ('openai', 'anthropic', 'gemini', 'openrouter', 'custom')}, ai_models=copy.deepcopy(self.state.get('ai_models', {})), notice=self.notice, last_error=self.last_error, warnings=self.warnings, platform=self.platform, cpu=cpu, prefs=copy.deepcopy(self.state.get('prefs', {})), revision=time.monotonic())
 
     def newer(self, latest, installed):
         if installed == 'unknown':
@@ -506,58 +511,189 @@ class Engine:
             return secrets_box.get('openai_api_key', '').strip()
         return ''
 
-    def call_ai_provider(self, provider, key, model, base_url, sys_prompt, user_payload):
-        if provider == 'anthropic':
-            if not key:
-                raise ValueError('Set an Anthropic API key first')
-            body = json.dumps({
-                'model': model or 'claude-3-5-haiku-latest',
-                'max_tokens': 4096,
-                'system': sys_prompt,
-                'messages': [{'role': 'user', 'content': user_payload}],
-            }).encode()
-            req = urllib.request.Request('https://api.anthropic.com/v1/messages', data=body, headers={'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01'}, method='POST')
-            with urllib.request.urlopen(req, timeout=180) as resp:
-                text = json.loads(resp.read())['content'][0]['text']
-        elif provider == 'gemini':
-            if not key:
-                raise ValueError('Set a Gemini API key first')
-            m = urllib.parse.quote(model or 'gemini-2.5-flash', safe='')
-            body = json.dumps({
-                'systemInstruction': {'parts': [{'text': sys_prompt}]},
-                'contents': [{'role': 'user', 'parts': [{'text': user_payload}]}],
-                'generationConfig': {'responseMimeType': 'application/json'},
-            }).encode()
-            req = urllib.request.Request(f'https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={urllib.parse.quote(key, safe="")}', data=body, headers={'Content-Type': 'application/json'}, method='POST')
-            with urllib.request.urlopen(req, timeout=180) as resp:
-                text = json.loads(resp.read())['candidates'][0]['content']['parts'][0]['text']
-        else:
-            endpoint = {'openai': 'https://api.openai.com/v1', 'openrouter': 'https://openrouter.ai/api/v1'}.get(provider, (base_url or '').strip().rstrip('/'))
-            if not endpoint:
-                raise ValueError('Enter a Base URL for custom OpenAI-compatible provider')
-            if provider != 'custom' and not key:
-                raise ValueError(f'Set an API key for {provider} first')
-            headers = {'Content-Type': 'application/json'}
-            if key:
-                headers['Authorization'] = f'Bearer {key}'
-            body = json.dumps({
-                'model': model or 'gpt-4o-mini',
-                'response_format': {'type': 'json_object'},
-                'messages': [
-                    {'role': 'system', 'content': sys_prompt},
-                    {'role': 'user', 'content': user_payload},
-                ],
-            }).encode()
-            req = urllib.request.Request(f'{endpoint}/chat/completions', data=body, headers=headers, method='POST')
-            with urllib.request.urlopen(req, timeout=180) as resp:
-                text = json.loads(resp.read())['choices'][0]['message']['content']
+    def cancel_ai(self):
+        self.ai_cancel.set()
+        proc = self.ai_proc
+        if proc and proc.poll() is None:
+            try:
+                proc.terminate()
+            except OSError:
+                pass
+
+    def _run_cancellable_cli(self, argv, stdin_text=None, timeout=120):
+        proc = subprocess.Popen(
+            argv, cwd=str(ROOT),
+            stdin=subprocess.PIPE if stdin_text is not None else subprocess.DEVNULL,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        self.ai_proc = proc
+        try:
+            if stdin_text is not None:
+                try:
+                    proc.stdin.write(stdin_text)
+                    proc.stdin.close()
+                except OSError:
+                    pass
+            deadline = time.monotonic() + timeout
+            while proc.poll() is None:
+                if self.ai_cancel.is_set():
+                    proc.terminate()
+                    raise Cancelled('Cancelled by user')
+                if time.monotonic() > deadline:
+                    proc.terminate()
+                    raise TimeoutError(f'Timed out after {timeout}s')
+                time.sleep(0.15)
+            out, err = proc.communicate()
+            return proc.returncode, out, err
+        finally:
+            if self.ai_proc is proc:
+                self.ai_proc = None
+
+    def call_ai_provider(self, provider, key, model, base_url, sys_prompt, user_payload, thinking='auto'):
+        t = (thinking or 'auto').strip().lower()
+        if t not in ('auto', 'low', 'medium', 'high'):
+            t = 'auto'
+
+        def send_once(use_thinking):
+            if provider == 'anthropic':
+                if not key:
+                    raise ValueError('Set an Anthropic API key first')
+                payload = {
+                    'model': model or 'claude-3-5-haiku-latest',
+                    'max_tokens': 4096,
+                    'system': sys_prompt,
+                    'messages': [{'role': 'user', 'content': user_payload}],
+                }
+                if use_thinking != 'auto':
+                    budget = {'low': 1024, 'medium': 8192, 'high': 16384}[use_thinking]
+                    payload['thinking'] = {'type': 'enabled', 'budget_tokens': budget}
+                    payload['max_tokens'] = budget + 4096
+                req = urllib.request.Request('https://api.anthropic.com/v1/messages', data=json.dumps(payload).encode(), headers={'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01'}, method='POST')
+                with urllib.request.urlopen(req, timeout=180) as resp:
+                    blocks = json.loads(resp.read()).get('content', [])
+                    return next((b['text'] for b in blocks if b.get('type') == 'text' and 'text' in b), blocks[0]['text'])
+            elif provider == 'gemini':
+                if not key:
+                    raise ValueError('Set a Gemini API key first')
+                m = urllib.parse.quote(model or 'gemini-2.5-flash', safe='')
+                gen_cfg = {'responseMimeType': 'application/json'}
+                if use_thinking != 'auto':
+                    gen_cfg['thinkingConfig'] = {'thinkingBudget': {'low': 1024, 'medium': 8192, 'high': 24576}[use_thinking]}
+                payload = {
+                    'systemInstruction': {'parts': [{'text': sys_prompt}]},
+                    'contents': [{'role': 'user', 'parts': [{'text': user_payload}]}],
+                    'generationConfig': gen_cfg,
+                }
+                req = urllib.request.Request(f'https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={urllib.parse.quote(key, safe="")}', data=json.dumps(payload).encode(), headers={'Content-Type': 'application/json'}, method='POST')
+                with urllib.request.urlopen(req, timeout=180) as resp:
+                    return json.loads(resp.read())['candidates'][0]['content']['parts'][0]['text']
+            elif provider == 'subscription':
+                cli = (base_url or '').strip().lower() or next((c for c in ('opencode', 'codex', 'claude', 'gemini') if shutil.which(c)), 'opencode')
+                if cli not in ('opencode', 'codex', 'claude', 'gemini'):
+                    raise ValueError(f'Unsupported subscription CLI: {cli}')
+                if not shutil.which(cli):
+                    raise ValueError(f'{cli} CLI is not installed on this machine')
+                if cli == 'opencode':
+                    fd, tmp_path = tempfile.mkstemp(prefix='armin-ai-', suffix='.json')
+                    os.close(fd)
+                    Path(tmp_path).write_text(user_payload)
+                    try:
+                        argv = ['opencode', 'run', *(['-m', model] if model else []), '-f', tmp_path, '--', sys_prompt + '\nReturn ONLY valid JSON.']
+                        rc, out, err = self._run_cancellable_cli(argv, timeout=120)
+                    finally:
+                        Path(tmp_path).unlink(missing_ok=True)
+                elif cli == 'codex':
+                    argv = ['codex', 'exec', '--skip-git-repo-check', *(['-m', model] if model else []), '-']
+                    rc, out, err = self._run_cancellable_cli(argv, stdin_text=f'{sys_prompt}\n\n{user_payload}', timeout=120)
+                elif cli == 'claude':
+                    argv = ['claude', '-p', *(['--model', model] if model else [])]
+                    rc, out, err = self._run_cancellable_cli(argv, stdin_text=f'{sys_prompt}\n\n{user_payload}', timeout=120)
+                else:
+                    argv = ['gemini', *(['-m', model] if model else []), '-p', sys_prompt]
+                    rc, out, err = self._run_cancellable_cli(argv, stdin_text=user_payload, timeout=120)
+                if rc != 0:
+                    raise ValueError((err or out or f'{cli} exited {rc}').strip()[-600:])
+                return out
+            else:
+                endpoint = {'openai': 'https://api.openai.com/v1', 'openrouter': 'https://openrouter.ai/api/v1'}.get(provider, (base_url or '').strip().rstrip('/'))
+                if not endpoint:
+                    raise ValueError('Enter a Base URL for custom OpenAI-compatible provider')
+                if provider != 'custom' and not key:
+                    raise ValueError(f'Set an API key for {provider} first')
+                headers = {'Content-Type': 'application/json'}
+                if key:
+                    headers['Authorization'] = f'Bearer {key}'
+                payload = {
+                    'model': model or 'gpt-4o-mini',
+                    'response_format': {'type': 'json_object'},
+                    'messages': [
+                        {'role': 'system', 'content': sys_prompt},
+                        {'role': 'user', 'content': user_payload},
+                    ],
+                }
+                if use_thinking != 'auto' and provider in ('openai', 'openrouter'):
+                    payload['reasoning_effort'] = use_thinking
+                req = urllib.request.Request(f'{endpoint}/chat/completions', data=json.dumps(payload).encode(), headers=headers, method='POST')
+                with urllib.request.urlopen(req, timeout=180) as resp:
+                    return json.loads(resp.read())['choices'][0]['message']['content']
+
+        try:
+            text = send_once(t)
+        except urllib.error.HTTPError as e:
+            if e.code == 400 and t != 'auto':
+                text = send_once('auto')
+            else:
+                detail = ''
+                try:
+                    raw_err = e.read().decode('utf-8', errors='ignore')
+                    err_json = json.loads(raw_err)
+                    detail = (err_json.get('error', {}).get('message') if isinstance(err_json.get('error'), dict) else err_json.get('error')) or raw_err
+                except Exception:
+                    pass
+                raise ValueError(f'{provider} API {e.code}: {str(detail or e.reason).strip()[:300]}') from e
         cleaned = re.sub(r'^```(?:json)?\s*|\s*```$', '', text.strip(), flags=re.I)
-        return json.loads(cleaned)
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            s, e = cleaned.find('{'), cleaned.rfind('}')
+            if s != -1 and e > s:
+                return json.loads(cleaned[s:e + 1])
+            raise
 
     def fetch_ai_models(self, provider='openai', key='', base_url=''):
         key = (key or '').strip() or self.get_ai_key(provider)
         models = []
-        if provider == 'anthropic':
+        if provider == 'subscription':
+            cli = (base_url or '').strip().lower() or next((c for c in ('opencode', 'codex', 'claude', 'gemini') if shutil.which(c)), 'opencode')
+            if cli == 'opencode' and shutil.which('opencode'):
+                p = subprocess.run(['opencode', 'models'], capture_output=True, text=True, timeout=10)
+                if p.returncode == 0:
+                    models = [ln.strip() for ln in p.stdout.splitlines() if ln.strip() and '/' in ln]
+            elif cli == 'codex':
+                codex_home = Path(os.environ.get('CODEX_HOME') or (self.home / '.codex'))
+                cache_file = codex_home / 'models_cache.json'
+                if cache_file.is_file():
+                    try:
+                        raw_models = json.loads(cache_file.read_text(encoding='utf-8')).get('models') or []
+                        visible = [m for m in raw_models if isinstance(m, dict) and m.get('visibility', 'list') == 'list']
+                        picked = visible or [m for m in raw_models if isinstance(m, dict)]
+                        models = [m.get('slug') or m.get('id') for m in picked if (m.get('slug') or m.get('id'))]
+                    except Exception:
+                        pass
+                if not models:
+                    models = ['gpt-6.2-sol', 'gpt-6.2-astra', 'gpt-6.1-terra', 'gpt-5.4', 'o4-mini']
+            elif cli == 'claude':
+                models = ['sonnet', 'opus', 'haiku']
+            elif cli == 'gemini':
+                models = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-3-flash-preview']
+            if models:
+                with self.lock:
+                    box = self.state.setdefault('ai_models', {})
+                    box['subscription'] = models
+                    box[f'subscription:{cli}'] = models
+                    self.save()
+            return models
+        elif provider == 'anthropic':
             if not key:
                 return []
             req = urllib.request.Request('https://api.anthropic.com/v1/models?limit=50', headers={'x-api-key': key, 'anthropic-version': '2023-06-01'})
@@ -589,15 +725,463 @@ class Engine:
                 self.save()
         return models
 
-    def ai_maintain(self, prompt='', model='gpt-4o-mini', provider='openai', base_url=''):
+    def check_launchable(self, app):
+        if not self.installed(app):
+            return {'installed': False, 'ok': None, 'reason': 'not installed'}
+        try:
+            argv = self.launch_argv(app)
+        except Exception as e:
+            return {'installed': True, 'ok': False, 'reason': f'invalid launch command: {e}'}
+        cmd0 = argv[0]
+        exe = Path(cmd0) if ('/' in cmd0 or '\\' in cmd0) else (Path(shutil.which(cmd0)) if shutil.which(cmd0) else None)
+        if not exe or not exe.is_file():
+            return {'installed': True, 'ok': False, 'reason': f'executable missing: {cmd0}', 'argv': argv}
+        if not IS_WIN and not os.access(exe, os.X_OK):
+            return {'installed': True, 'ok': False, 'reason': f'missing executable permission (+x): {exe}', 'exe': str(exe), 'fixable_chmod': True}
+        if not IS_WIN:
+            x11_dir = Path('/tmp/.X11-unix')
+            if x11_dir.is_dir() and any(x11_dir.glob('X[0-9]*_')) and not (x11_dir / 'X0').exists():
+                return {'installed': True, 'ok': False, 'reason': 'X11 socket /tmp/.X11-unix/X0 missing (X0_ exists)', 'exe': str(exe), 'fixable_x11': True}
+            if app['install'].get('type') != 'appimage' and shutil.which('ldd'):
+                try:
+                    head = exe.read_bytes()[:4]
+                    if head == b'\x7fELF':
+                        p = subprocess.run(['ldd', str(exe)], capture_output=True, text=True, timeout=2)
+                        missing = [ln.strip() for ln in p.stdout.splitlines() if 'not found' in ln]
+                        if missing:
+                            return {'installed': True, 'ok': False, 'reason': 'missing shared libraries: ' + '; '.join(missing[:3]), 'exe': str(exe)}
+                except Exception:
+                    pass
+        return {'installed': True, 'ok': True, 'exe': str(exe)}
+
+    def _append_term(self, text):
+        with self.lock:
+            cur = self.ai_report or ''
+            self.ai_report = (cur + ('\n' if cur and not cur.endswith('\n') else '') + text).strip()
+        self.emit('state', self.snapshot())
+
+    def _run_shell_cmd(self, cmd, needs_admin=False):
+        def work():
+            with self.lock:
+                self.ai_running = True
+                self.ai_cancel.clear()
+            self.emit('state', self.snapshot())
+            try:
+                run_cmd = cmd.strip()
+                if run_cmd.startswith('sudo '):
+                    run_cmd = run_cmd[5:].strip()
+                    needs_priv = True
+                else:
+                    needs_priv = bool(needs_admin)
+                self._append_term(f'$ {("pkexec " if needs_priv else "")}{run_cmd}')
+                if needs_priv and not IS_WIN:
+                    priv = self.privilege_cmd()
+                    argv = [*priv, 'sh', '-c', run_cmd]
+                else:
+                    argv = ['cmd', '/c', run_cmd] if IS_WIN else ['sh', '-c', run_cmd]
+                proc = subprocess.Popen(
+                    argv, cwd=self.term_cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    stdin=subprocess.DEVNULL, text=True, errors='replace', bufsize=1,
+                )
+                self.ai_proc = proc
+                buf = []
+                for line in proc.stdout:
+                    if self.ai_cancel.is_set():
+                        proc.terminate()
+                        break
+                    buf.append(line.rstrip('\n'))
+                    if len(buf) >= 5:
+                        self._append_term('\n'.join(buf))
+                        buf.clear()
+                if buf:
+                    self._append_term('\n'.join(buf))
+                rc = proc.wait()
+                if self.ai_cancel.is_set():
+                    self._append_term('Cancelled by user.')
+                elif rc != 0:
+                    self._append_term(f'[exit {rc}]')
+            except Exception as e:
+                self._append_term(f'Error: {e}')
+            finally:
+                if self.ai_proc is not None:
+                    self.ai_proc = None
+                with self.lock:
+                    self.ai_running = False
+                self.emit('state', self.snapshot())
+
+        threading.Thread(target=work, name='armin-term-cmd', daemon=True).start()
+
+    def run_pending_fix(self, fix_id):
+        with self.lock:
+            if self.ai_running:
+                raise ValueError('Another AI task is running')
+            fix = next((f for f in self.pending_fixes if f['id'] == fix_id), None)
+            if not fix:
+                raise ValueError('Fix command not found')
+            self.pending_fixes = [f for f in self.pending_fixes if f['id'] != fix_id]
+        self._run_shell_cmd(fix['cmd'], needs_admin=bool(fix.get('needs_admin')))
+
+    def terminal_exec(self, raw_input, provider='openai', model='', base_url='', thinking='auto'):
+        text = (raw_input or '').strip()
+        if not text:
+            return
+        if text == 'clear':
+            with self.lock:
+                self.ai_report = ''
+                self.pending_fixes = []
+                self.chat_history = []
+            self.emit('state', self.snapshot())
+            return
+        if text == 'help':
+            self._append_term(
+                '$ help\n'
+                'Built-ins: clear, pwd, cd <dir>, help\n'
+                'Run shell commands with ! or $ (e.g. !ls -la, !sudo pacman -Syu, !systemctl --user status)\n'
+                'Or type normally to chat with the AI and ask it to inspect or fix apps.'
+            )
+            return
+        if text == 'pwd':
+            self._append_term(f'$ pwd\n{self.term_cwd}')
+            return
+        if text == 'cd' or text.startswith('cd '):
+            arg = text[2:].strip() or str(self.home)
+            target = (Path(self.term_cwd) / os.path.expanduser(arg)).resolve()
+            if not target.is_dir():
+                self._append_term(f'$ {text}\ncd: no such directory: {arg}')
+            else:
+                self.term_cwd = str(target)
+                self._append_term(f'$ {text}\n{self.term_cwd}')
+            return
+
+        shell_prefixes = ('!', '$', 'ls', 'cat', 'which', 'echo', 'env', 'uname', 'ps', 'ss', 'df', 'free', 'ldd', 'chmod', 'ln', 'mkdir', 'rm', 'mv', 'cp', 'git', 'pacman', 'yay', 'paru', 'systemctl', 'journalctl', 'nvidia-smi', 'pkexec', 'sudo')
+        is_shell = text.startswith(('!', '$')) or text.split()[0] in shell_prefixes
+        if is_shell:
+            with self.lock:
+                if self.ai_running:
+                    raise ValueError('Another AI task is running')
+            cmd = text.lstrip('!$ ').strip()
+            self._run_shell_cmd(cmd, needs_admin=cmd.startswith('sudo '))
+            return
+
         key = self.get_ai_key(provider)
-        if provider != 'custom' and not key:
+        if provider not in ('custom', 'subscription') and not key:
             raise ValueError(f'Set an API key for {provider} first')
         with self.lock:
-            if self.busy or self.ai_running:
-                raise ValueError('Another task is running')
+            if self.ai_running:
+                raise ValueError('Another AI task is running')
             self.ai_running = True
-            self.busy = True
+            self.ai_cancel.clear()
+        self._append_term(f'You: {text}')
+
+        def run_readonly_inspect(cmd_str):
+            s = (cmd_str or '').strip()
+            if not s or any(ch in s for ch in ('|', '>', '<', ';', '&', '$', '`', '\n')):
+                return f'[blocked non-readonly command: {s}]'
+            try:
+                parts = shlex.split(s)
+            except ValueError as e:
+                return f'[invalid command: {e}]'
+            ro_bins = {'ls', 'cat', 'head', 'tail', 'which', 'ldd', 'file', 'uname', 'ps', 'ss', 'df', 'free', 'env', 'nvidia-smi', 'pacman', 'systemctl', 'journalctl'}
+            if not parts or parts[0] not in ro_bins:
+                return f'[not in read-only allowlist: {parts[0] if parts else ""}]'
+            if parts[0] == 'pacman' and not any(f in parts[1:] for f in ('-Q', '-Qi', '-Ql', '-Si', '-Qu')):
+                return '[pacman inspect only allows query flags]'
+            if parts[0] == 'systemctl' and 'status' not in parts[1:] and 'is-active' not in parts[1:]:
+                return '[systemctl inspect only allows status/is-active]'
+            try:
+                p = subprocess.run(parts, cwd=self.term_cwd, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=6)
+                return ((p.stdout or '') + ('\n' + p.stderr if p.stderr else '')).strip()[-1800:] or '(no output)'
+            except Exception as e:
+                return f'[inspect error: {e}]'
+
+        def chat_work():
+            try:
+                linux_cat = json.loads((ROOT / 'catalog.json').read_text())
+                launch_status = [{'id': a['id'], 'name': a['name'], **self.check_launchable(a)} for a in linux_cat['apps'] if self.installed(a)]
+                sys_prompt = (
+                    'You are the interactive AI assistant inside Armin Launcher\'s mini terminal. '
+                    'Help the user diagnose app launch failures, inspect logs, and fix issues. '
+                    'Return ONLY valid JSON: {"reply": str, "inspect_commands": [str], "fix_commands": [{"title": str, "cmd": str, "needs_admin": bool}]}. '
+                    'Use inspect_commands ONLY if you need read-only diagnostic output first (ls, cat, head, tail, which, ldd, file, ps, ss, df, free, nvidia-smi, systemctl status, journalctl). '
+                    'Set needs_admin=true in fix_commands when root/sudo/pacman permissions are needed (the UI will prompt the user for admin via pkexec).'
+                )
+                inspect_results = []
+                res = {}
+                for _round in range(3):
+                    if self.ai_cancel.is_set():
+                        raise Cancelled('Cancelled by user')
+                    payload = json.dumps({
+                        'message': text,
+                        'history': self.chat_history[-10:],
+                        'cwd': self.term_cwd,
+                        'recent_log': (self.ai_report or '')[-3000:],
+                        'installed_launch_status': launch_status,
+                        'inspect_results': inspect_results,
+                    }, separators=(',', ':'))
+                    res = self.call_ai_provider(provider, key, model, base_url, sys_prompt, payload, thinking=thinking)
+                    cmds = [str(c).strip() for c in (res.get('inspect_commands') or []) if str(c).strip()][:3]
+                    if not cmds or _round == 2:
+                        break
+                    for c in cmds:
+                        if self.ai_cancel.is_set():
+                            raise Cancelled('Cancelled by user')
+                        out = run_readonly_inspect(c)
+                        inspect_results.append({'cmd': c, 'output': out})
+                        self._append_term(f'$ {c}\n{out[:500]}')
+                reply = str(res.get('reply') or res.get('summary') or 'Done.')
+                fixes = []
+                for idx_f, f in enumerate(res.get('fix_commands') or []):
+                    if isinstance(f, dict) and str(f.get('cmd', '')).strip():
+                        fixes.append({
+                            'id': f'fix-{int(time.time()*1000)}-{idx_f}',
+                            'title': str(f.get('title') or f['cmd'])[:80],
+                            'cmd': str(f['cmd']).strip(),
+                            'needs_admin': bool(f.get('needs_admin', False)),
+                        })
+                with self.lock:
+                    self.pending_fixes = fixes
+                    self.chat_history = (self.chat_history + [{'role': 'user', 'content': text}, {'role': 'assistant', 'content': reply}])[-12:]
+                self._append_term(f'AI: {reply}')
+            except Cancelled:
+                self._append_term('Cancelled by user.')
+            except Exception as e:
+                self._append_term(f'Error: {e}')
+            finally:
+                with self.lock:
+                    self.ai_running = False
+                self.emit('state', self.snapshot())
+
+        threading.Thread(target=chat_work, name='armin-ai-chat', daemon=True).start()
+
+    @staticmethod
+    def _extract_accent_from_bytes(data, fallback='#2d81ff'):
+        if b'<svg' in data[:500].lower():
+            for m in re.finditer(r'#[0-9a-fA-F]{6}\b', data.decode('utf-8', errors='ignore')):
+                c = m.group(0).lower()
+                if c not in ('#000000', '#ffffff', '#111111', '#222222', '#eeeeee', '#f5f5f5'):
+                    return c
+            return fallback
+        try:
+            from PIL import Image
+            import io
+            img = Image.open(io.BytesIO(data)).convert('RGBA').resize((48, 48))
+            best, best_score = fallback, -1.0
+            for r, g, b, a in img.getdata():
+                if a < 128:
+                    continue
+                mx, mn = max(r, g, b), min(r, g, b)
+                sat = (mx - mn) / max(1, mx)
+                lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0
+                if lum < 0.12 or lum > 0.92:
+                    continue
+                score = sat * 2.0 + (1.0 - abs(lum - 0.55))
+                if score > best_score:
+                    best_score = score
+                    best = f'#{r:02x}{g:02x}{b:02x}'
+            return best
+        except Exception:
+            return fallback
+
+    @staticmethod
+    def _shift_hex(hex_color, delta=28):
+        if not re.fullmatch(r'#[0-9a-fA-F]{6}', hex_color or ''):
+            return '#7aa2f7'
+        r, g, b = int(hex_color[1:3], 16), int(hex_color[3:5], 16), int(hex_color[5:7], 16)
+        r = max(0, min(255, r + delta))
+        g = max(0, min(255, g - delta // 2))
+        b = max(0, min(255, b + delta))
+        return f'#{r:02x}{g:02x}{b:02x}'
+
+    def enrich_app_assets(self, app, details, log=None):
+        """Automatically fetch missing icon, screenshot, description, features, and colors for an app."""
+        aid = app['id']
+        changed = False
+        has_icon = any((ROOT / 'ui' / 'icons' / f'{aid}.{e}').is_file() for e in ('png', 'svg'))
+        entry = details.get(aid) if isinstance(details.get(aid), dict) else {}
+        has_shot = any((ROOT / 'ui' / s.get('url', '').lstrip('/')).is_file() for s in entry.get('shots', []) if isinstance(s, dict))
+        needs_details = not entry.get('about') or not entry.get('features') or not entry.get('accent2')
+        if has_icon and has_shot and not needs_details:
+            return False
+
+        badge_re = re.compile(r'(shields\.io|sonarcloud\.io|coderabbit\.ai|codecov\.io|badgen\.net|badge|workflows/|actions/workflows)', re.I)
+        icon_candidates, shot_candidates = [], []
+        repo_desc, web_desc, readme_text, theme_color, avatar_url = '', '', '', '', ''
+
+        def fetch_bytes(url, timeout=12):
+            req = urllib.request.Request(url, headers={'User-Agent': 'ArminLauncher/1.0'})
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return r.read(), (r.headers.get('Content-Type') or '').lower()
+
+        website = app.get('website', '')
+        if website.startswith('https://'):
+            try:
+                raw, ctype = fetch_bytes(website, timeout=10)
+                if 'html' in ctype or b'<html' in raw[:500].lower():
+                    html_txt = raw.decode('utf-8', errors='ignore')
+                    m_tc = re.search(r'<meta[^>]+name=["\']theme-color["\'][^>]+content=["\'](#[0-9a-fA-F]{6})["\']', html_txt, re.I)
+                    if m_tc:
+                        theme_color = m_tc.group(1)
+                    m_desc = re.search(r'<meta[^>]+(?:name=["\']description["\']|property=["\']og:description["\'])[^>]+content=["\']([^"\']+)["\']', html_txt, re.I)
+                    if m_desc:
+                        web_desc = m_desc.group(1).strip()
+                    for m in re.finditer(r'<link[^>]+rel=["\'][^"\']*icon[^"\']*["\'][^>]+href=["\']([^"\']+)["\']', html_txt, re.I):
+                        icon_candidates.append(urllib.parse.urljoin(website, m.group(1)))
+                    for m in re.finditer(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']', html_txt, re.I):
+                        shot_candidates.append(urllib.parse.urljoin(website, m.group(1)))
+                    for m in re.finditer(r'<img[^>]+src=["\']([^"\']+)["\']', html_txt, re.I):
+                        u = urllib.parse.urljoin(website, m.group(1))
+                        if not badge_re.search(u):
+                            if 'icon' in u.lower() or 'logo' in u.lower():
+                                icon_candidates.append(u)
+                            else:
+                                shot_candidates.append(u)
+            except Exception:
+                pass
+
+        repo = (app.get('source') or {}).get('repo', '')
+        branch = 'main'
+        if repo:
+            try:
+                with self.request(f'{self.api_base}/repos/{repo}', {'Accept': 'application/vnd.github+json'}) as r:
+                    rdata = json.load(r)
+                repo_desc = (rdata.get('description') or '').strip()
+                branch = rdata.get('default_branch') or 'main'
+                avatar_url = (rdata.get('owner') or {}).get('avatar_url') or ''
+            except Exception:
+                pass
+            try:
+                with self.request(f'{self.api_base}/repos/{repo}/readme', {'Accept': 'application/vnd.github.raw+json'}) as r:
+                    readme_text = r.read().decode('utf-8', errors='ignore')
+                raw_base = f'https://raw.githubusercontent.com/{repo}/{branch}/'
+                for m in re.finditer(r'(?:<img[^>]+src=["\']|!\[[^\]]*\]\()([^"\'\)\s]+)', readme_text, re.I):
+                    u = m.group(1)
+                    if badge_re.search(u):
+                        continue
+                    if not u.startswith(('http://', 'https://')):
+                        u = urllib.parse.urljoin(raw_base, u.lstrip('./'))
+                    if any(k in u.lower() for k in ('icon', 'logo', 'hicolor')):
+                        icon_candidates.append(u)
+                    else:
+                        shot_candidates.append(u)
+            except Exception:
+                pass
+
+        if avatar_url:
+            icon_candidates.append(avatar_url)
+
+        icon_bytes = b''
+        if not has_icon:
+            for u in icon_candidates:
+                try:
+                    data, ctype = fetch_bytes(u)
+                    if len(data) < 64:
+                        continue
+                    if b'<svg' in data[:500].lower():
+                        (ROOT / 'ui' / 'icons' / f'{aid}.svg').write_bytes(data)
+                        icon_bytes, has_icon, changed = data, True, True
+                        if log is not None:
+                            log.append(f'Auto-saved SVG icon for {aid}')
+                        break
+                    if 'image' in ctype or data[:4] in (b'\x89PNG', b'RIFF') or data[:2] == b'\xff\xd8':
+                        from PIL import Image
+                        import io
+                        out = io.BytesIO()
+                        Image.open(io.BytesIO(data)).convert('RGBA').save(out, format='PNG')
+                        png_data = out.getvalue()
+                        (ROOT / 'ui' / 'icons' / f'{aid}.png').write_bytes(png_data)
+                        icon_bytes, has_icon, changed = png_data, True, True
+                        if log is not None:
+                            log.append(f'Auto-saved PNG icon for {aid}')
+                        break
+                except Exception:
+                    continue
+        else:
+            for ext in ('png', 'svg'):
+                p = ROOT / 'ui' / 'icons' / f'{aid}.{ext}'
+                if p.is_file():
+                    icon_bytes = p.read_bytes()
+                    break
+
+        if not has_shot:
+            for u in shot_candidates:
+                try:
+                    data, ctype = fetch_bytes(u, timeout=15)
+                    if len(data) < 2048 or b'<svg' in data[:400].lower():
+                        continue
+                    ext = '.png' if data[:4] == b'\x89PNG' else '.webp' if data[:4] == b'RIFF' else '.jpg'
+                    fname = f'{aid}-1{ext}'
+                    (ROOT / 'ui' / 'shots' / fname).write_bytes(data)
+                    entry = details.setdefault(aid, {'about': '', 'features': [], 'shots': []})
+                    entry['shots'] = [{'caption': f'{app["name"]} preview', 'url': f'/shots/{fname}'}]
+                    has_shot, changed = True, True
+                    if log is not None:
+                        log.append(f'Auto-saved screenshot for {aid}')
+                    break
+                except Exception:
+                    continue
+
+        entry = details.setdefault(aid, {'about': '', 'features': [], 'shots': []})
+        if not entry.get('about'):
+            entry['about'] = web_desc or repo_desc or app.get('tagline', '')
+            changed = True
+        if not entry.get('features'):
+            feats = []
+            for line in readme_text.splitlines():
+                m = re.match(r'^\s*[-*]\s+\*\*([^*]{2,40})\*\*[:\-\s]+(.{8,140})$', line)
+                if m:
+                    feats.append({'title': m.group(1).strip(), 'text': m.group(2).strip()})
+                if len(feats) >= 3:
+                    break
+            if not feats and entry.get('about'):
+                feats = [{'title': app['name'], 'text': entry['about']}]
+            if feats:
+                entry['features'] = feats
+                changed = True
+
+        extracted = theme_color or (self._extract_accent_from_bytes(icon_bytes, app.get('accent', '#2d81ff')) if icon_bytes else app.get('accent', '#2d81ff'))
+        if re.fullmatch(r'#[0-9a-fA-F]{6}', extracted) and app.get('accent', '').lower() in ('#2d81ff', '#000000', '#ffffff', ''):
+            app['accent'] = extracted
+            changed = True
+        if not entry.get('accent2'):
+            entry['accent2'] = self._shift_hex(app.get('accent') or extracted)
+            changed = True
+        return changed
+
+    def launch_subscription_login(self, cli='opencode'):
+        c = (cli or 'opencode').strip().lower()
+        if c not in ('opencode', 'codex', 'claude', 'gemini'):
+            raise ValueError(f'Unsupported subscription CLI: {c}')
+        if not shutil.which(c):
+            raise ValueError(f'{c} CLI is not installed')
+        login_cmd = {
+            'opencode': ['opencode', 'auth', 'login'],
+            'codex': ['codex', 'login'],
+            'claude': ['claude', 'login'],
+            'gemini': ['gemini'],
+        }[c]
+        if IS_WIN:
+            subprocess.Popen(['cmd', '/c', 'start', '', *login_cmd], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return
+        term = next((t for t in ('xdg-terminal-exec', 'ghostty', 'kitty', 'alacritty', 'foot', 'wezterm', 'konsole', 'gnome-terminal') if shutil.which(t)), '')
+        if not term:
+            raise ValueError(f'No terminal emulator found. Run `{" ".join(login_cmd)}` in your terminal.')
+        if term in ('gnome-terminal',):
+            argv = [term, '--', *login_cmd]
+        elif term in ('alacritty', 'kitty', 'ghostty', 'konsole', 'foot'):
+            argv = [term, '-e', *login_cmd]
+        else:
+            argv = [term, *login_cmd]
+        subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+
+    def ai_maintain(self, prompt='', model='gpt-4o-mini', provider='openai', base_url='', thinking='auto'):
+        key = self.get_ai_key(provider)
+        if provider not in ('custom', 'subscription') and not key:
+            raise ValueError(f'Set an API key for {provider} first')
+        with self.lock:
+            if self.ai_running:
+                raise ValueError('Another AI task is running')
+            self.ai_running = True
+            self.ai_cancel.clear()
             self.ai_report = 'Gathering live release and asset metadata…'
         self.emit('state', self.snapshot())
 
@@ -609,19 +1193,43 @@ class Engine:
                 win_cat = json.loads(win_path.read_text()) if win_path.is_file() else {'version': 1, 'apps': []}
                 det_path = ROOT / 'ui' / 'details.json'
                 details = json.loads(det_path.read_text()) if det_path.is_file() else {}
+                last_tags = dict(self.state.get('ai_last_maintain_tags', {}))
+                stale_shots = []
 
                 # 1. Gather live facts in Python
                 noise_asset_re = re.compile(r'(\.(sha256|sha512|sha1|md5|sig|asc|zsync|blockmap)|arm64|aarch64|armv7|i386|i686)', re.I)
                 facts = []
                 total_apps = len(linux_cat['apps'])
                 for idx_app, a in enumerate(linux_cat['apps'], 1):
+                    if self.ai_cancel.is_set():
+                        raise Cancelled('Cancelled by user')
                     aid = a['id']
                     if idx_app == 1 or idx_app % 5 == 0 or idx_app == total_apps:
                         self.ai_report = f'Checking catalog & releases ({idx_app}/{total_apps}): {a["name"]}…'
                         self.emit('state', self.snapshot())
                     has_icon = any((ROOT / 'ui' / 'icons' / f'{aid}.{e}').is_file() for e in ('png', 'svg'))
                     shots = [s for s in details.get(aid, {}).get('shots', []) if s.get('url', '').startswith('/shots/') and (ROOT / 'ui' / s['url'].lstrip('/')).is_file()]
-                    item = {'id': aid, 'name': a['name'], 'source': a['source'], 'install': a['install'], 'has_icon': has_icon, 'local_shots': len(shots), 'build_info': details.get(aid, {}).get('build_info')}
+                    launch_info = self.check_launchable(a)
+                    if launch_info.get('fixable_chmod') and launch_info.get('exe'):
+                        try:
+                            os.chmod(launch_info['exe'], 0o755)
+                            launch_info = self.check_launchable(a)
+                            log.append(f'Fixed +x permissions for {a["name"]}')
+                        except OSError:
+                            pass
+                    if launch_info.get('fixable_x11') and not IS_WIN:
+                        try:
+                            for sock in Path('/tmp/.X11-unix').glob('X[0-9]*_'):
+                                tgt = sock.with_name(sock.name[:-1])
+                                if sock.is_socket() and not tgt.exists():
+                                    tgt.symlink_to(sock.name)
+                            launch_info = self.check_launchable(a)
+                            log.append('Restored missing /tmp/.X11-unix/X0 symlink')
+                        except OSError:
+                            pass
+                    if launch_info.get('installed') and launch_info.get('ok') is False:
+                        log.append(f'Launch check failed for {a["name"]}: {launch_info.get("reason")}')
+                    item = {'id': aid, 'name': a['name'], 'source': a['source'], 'install': a['install'], 'has_icon': has_icon, 'local_shots': len(shots), 'build_info': details.get(aid, {}).get('build_info'), 'launchable': launch_info}
                     if a['source']['type'] == 'github_release':
                         try:
                             with self.request(f'{self.api_base}/repos/{a["source"]["repo"]}/releases/latest', {'Accept': 'application/vnd.github+json'}) as r:
@@ -632,6 +1240,14 @@ class Engine:
                             item['api_status'] = e.code
                         except Exception as e:
                             item['api_error'] = str(e)
+                    cur_tag = item.get('latest_tag') or self.state.get('releases', {}).get(aid, {}).get('tag')
+                    if cur_tag:
+                        item['latest_tag'] = cur_tag
+                        prev_tag = last_tags.get(aid)
+                        if prev_tag and prev_tag != cur_tag and len(shots) > 0:
+                            item['shot_stale'] = True
+                            item['prev_maintain_tag'] = prev_tag
+                            stale_shots.append(aid)
                     facts.append(item)
                 win_facts = [{'id': a['id'], 'name': a['name'], 'source': a['source'], 'install': a['install']} for a in win_cat['apps']]
 
@@ -678,7 +1294,7 @@ class Engine:
                     except Exception:
                         pass
 
-                log.append(f'Checked {len(facts)} apps' + (f' + {len(artcraft_repos)} new ArtCraft releases' if artcraft_repos else '') + (f' + search hits for "{prompt.strip()}"' if prompt.strip() else ''))
+                log.append(f'Checked {len(facts)} apps' + (f' ({len(stale_shots)} screenshot(s) flagged stale after update)' if stale_shots else '') + (f' + {len(artcraft_repos)} new ArtCraft releases' if artcraft_repos else '') + (f' + search hits for "{prompt.strip()}"' if prompt.strip() else ''))
                 try:
                     self.fetch_ai_models(provider, key, base_url)
                 except Exception:
@@ -694,9 +1310,12 @@ class Engine:
                     'Valid install: {"type": "appimage", "binary_name": "name", "launch": "cmd"} | {"type": "tarball"|"zip", "bin": "rel/path", "launch": "cmd"} | {"type": "pacman_pkg"|"pacman"|"aur"|"winget"|"msi"|"exe", "package": "pkg", "launch": "cmd"}. '
                     'Prefer pre-built downloadable versions (github_release, arch_repo, or -bin AUR) over compiling from source. '
                     'If artcraft_repos contains any newly released ArtCraft app not yet in facts, propose adding it to linux_updates (and win_updates if Windows assets exist). '
+                    'If any installed app has launchable.ok == false, propose repair commands in fix_commands (set needs_admin=true when root/sudo/pacman is needed). '
+                    'If an app has shot_stale=true (updated since last maintain) or its screenshot no longer represents it well, propose a fresh verified shot_url in assets. '
                     'Given the live app facts, win_facts, artcraft_repos, and optional user request, return ONLY valid JSON with keys: '
                     '{"summary": str, "linux_updates": [app_obj], "win_updates": [app_obj], '
-                    '"remove_ids": [str], "assets": [{"id": str, "icon_url": str|null, "shot_url": str|null, "shot_caption": str, "about": str, "features": [{"title": str, "text": str}], "build_info": {"from_source": bool, "estimated_gb": number, "base_minutes_8core": number}|null}]}. '
+                    '"remove_ids": [str], "fix_commands": [{"title": str, "cmd": str, "needs_admin": bool}], '
+                    '"assets": [{"id": str, "icon_url": str|null, "shot_url": str|null, "shot_caption": str, "about": str, "features": [{"title": str, "text": str}], "build_info": {"from_source": bool, "estimated_gb": number, "base_minutes_8core": number}|null}]}. '
                     'Only suggest real, verified assets seen in the provided facts, artcraft_repos, or search_hits. Keep lists empty if no changes are needed.'
                 )
                 user_payload = json.dumps(
@@ -719,7 +1338,7 @@ class Engine:
 
                     threading.Thread(target=pulse, daemon=True).start()
                     try:
-                        return self.call_ai_provider(provider, key, model, base_url, sys_prompt, payload)
+                        return self.call_ai_provider(provider, key, model, base_url, sys_prompt, payload, thinking=thinking)
                     finally:
                         done.set()
 
@@ -775,6 +1394,19 @@ class Engine:
                 log.append('AI summary: ' + str(plan.get('summary', 'Done.')))
                 if remove_ids:
                     log.append('Removed: ' + ', '.join(sorted(remove_ids)))
+                fixes = []
+                for idx_f, f in enumerate(plan.get('fix_commands') or []):
+                    if isinstance(f, dict) and str(f.get('cmd', '')).strip():
+                        fixes.append({
+                            'id': f'fix-{int(time.time()*1000)}-{idx_f}',
+                            'title': str(f.get('title') or f['cmd'])[:80],
+                            'cmd': str(f['cmd']).strip(),
+                            'needs_admin': bool(f.get('needs_admin', False)),
+                        })
+                with self.lock:
+                    self.pending_fixes = fixes
+                if fixes:
+                    log.append(f'Proposed {len(fixes)} fix command(s) — click Run below to execute.')
 
                 changed = False
                 if new_linux != linux_cat:
@@ -822,6 +1454,16 @@ class Engine:
                         except Exception:
                             pass
 
+                enriched_any = False
+                for app_obj in new_linux['apps']:
+                    if self.enrich_app_assets(app_obj, details, log):
+                        enriched_any = True
+                if enriched_any:
+                    validate_catalog(new_linux)
+                    atomic_json(ROOT / 'catalog.json', new_linux)
+                    atomic_json(det_path, details)
+                    changed = True
+
                 if changed:
                     t = subprocess.run([sys.executable, '-m', 'unittest', 'discover', '-s', 'tests'], cwd=ROOT, capture_output=True, text=True, timeout=60)
                     if t.returncode != 0:
@@ -830,8 +1472,18 @@ class Engine:
                 else:
                     log.append('Catalog already up to date — no changes needed.')
 
+                with self.lock:
+                    tag_map = self.state.setdefault('ai_last_maintain_tags', {})
+                    for item in facts:
+                        if item.get('latest_tag'):
+                            tag_map[item['id']] = item['latest_tag']
+                    self.save()
                 self.ai_report = '\n'.join(log)
                 self.notice = 'AI Maintain complete.'
+            except Cancelled:
+                log.append('Cancelled by user.')
+                self.ai_report = '\n'.join(log)
+                self.notice = 'AI Maintain cancelled.'
             except Exception as e:
                 log.append(f'Error: {e}')
                 self.ai_report = '\n'.join(log)
@@ -841,7 +1493,6 @@ class Engine:
             finally:
                 with self.lock:
                     self.ai_running = False
-                    self.busy = self.active_workers > 0
                 self.emit('state', self.snapshot())
 
         threading.Thread(target=work, name='armin-ai-maintain', daemon=True).start()
@@ -1752,9 +2403,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     raise ValueError('Unsupported ai_keys op')
                 self.json(200, engine.snapshot())
                 return
+            elif path == '/api/ai_sub_login':
+                cli = str(data.get('cli', 'opencode')).strip().lower()
+                engine.launch_subscription_login(cli)
+                self.json(200, {'ok': True})
+                return
             elif path == '/api/ai_models':
                 provider = str(data.get('provider', 'openai')).strip().lower()
-                if provider not in ('openai', 'anthropic', 'gemini', 'openrouter', 'custom'):
+                if provider not in ('openai', 'anthropic', 'gemini', 'openrouter', 'custom', 'subscription'):
                     raise ValueError('Unsupported AI provider')
                 if 'api_key' in data and str(data['api_key']).strip():
                     engine.save_ai_key(provider, str(data['api_key']).strip(), str(data.get('key_label', '')))
@@ -1765,10 +2421,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return
             elif path == '/api/ai_maintain':
                 provider = str(data.get('provider', 'openai')).strip().lower()
-                if provider not in ('openai', 'anthropic', 'gemini', 'openrouter', 'custom'):
+                if provider not in ('openai', 'anthropic', 'gemini', 'openrouter', 'custom', 'subscription'):
                     raise ValueError('Unsupported AI provider')
                 model = str(data.get('model', '')).strip()
                 base_url = str(data.get('base_url', '')).strip()
+                thinking = str(data.get('thinking', 'auto')).strip().lower()
+                if thinking not in ('auto', 'low', 'medium', 'high'):
+                    thinking = 'auto'
                 if 'api_key' in data and str(data['api_key']).strip():
                     engine.save_ai_key(provider, str(data['api_key']).strip(), str(data.get('key_label', '')))
                 elif data.get('key_id'):
@@ -1776,12 +2435,39 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 with engine.lock:
                     prefs = engine.state.setdefault('prefs', {})
                     prefs['ai_provider'] = provider
+                    prefs['ai_thinking'] = thinking
                     if model:
                         prefs.setdefault('ai_selected_models', {})[provider] = model[:200]
                     if provider == 'custom' and base_url:
                         prefs['ai_base_url'] = base_url[:300]
                     engine.save()
-                engine.ai_maintain(prompt=str(data.get('prompt', '')), model=model, provider=provider, base_url=base_url)
+                engine.ai_maintain(prompt=str(data.get('prompt', '')), model=model, provider=provider, base_url=base_url, thinking=thinking)
+                self.json(200, engine.snapshot())
+                return
+            elif path == '/api/ai_terminal':
+                provider = str(data.get('provider', 'openai')).strip().lower()
+                if provider not in ('openai', 'anthropic', 'gemini', 'openrouter', 'custom', 'subscription'):
+                    provider = 'openai'
+                if data.get('key_id'):
+                    engine.select_ai_key(provider, str(data['key_id']).strip())
+                thinking = str(data.get('thinking', 'auto')).strip().lower()
+                if thinking not in ('auto', 'low', 'medium', 'high'):
+                    thinking = 'auto'
+                engine.terminal_exec(
+                    str(data.get('input', '')),
+                    provider=provider,
+                    model=str(data.get('model', '')).strip(),
+                    base_url=str(data.get('base_url', '')).strip(),
+                    thinking=thinking,
+                )
+                self.json(200, engine.snapshot())
+                return
+            elif path == '/api/ai_fix':
+                engine.run_pending_fix(str(data.get('id', '')).strip())
+                self.json(200, engine.snapshot())
+                return
+            elif path == '/api/ai_cancel':
+                engine.cancel_ai()
                 self.json(200, engine.snapshot())
                 return
             elif path == '/api/install':
@@ -1831,9 +2517,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         prefs['profiles'] = cleaned
                     if 'ai_provider' in data:
                         ap = str(data['ai_provider']).strip().lower()
-                        if ap not in ('openai', 'anthropic', 'gemini', 'openrouter', 'custom'):
+                        if ap not in ('openai', 'anthropic', 'gemini', 'openrouter', 'custom', 'subscription'):
                             raise ValueError('invalid ai_provider')
                         prefs['ai_provider'] = ap
+                    if 'ai_sub_cli' in data:
+                        sc = str(data['ai_sub_cli']).strip().lower()
+                        if sc in ('opencode', 'codex', 'claude', 'gemini'):
+                            prefs['ai_sub_cli'] = sc
+                    if 'ai_thinking' in data:
+                        at = str(data['ai_thinking']).strip().lower()
+                        if at not in ('auto', 'low', 'medium', 'high'):
+                            raise ValueError('invalid ai_thinking')
+                        prefs['ai_thinking'] = at
                     if 'ai_base_url' in data:
                         prefs['ai_base_url'] = str(data['ai_base_url']).strip()[:300]
                     if 'ai_selected_models' in data:

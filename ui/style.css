@@ -908,9 +908,111 @@ dialog::backdrop { background: #000a; backdrop-filter: blur(3px); }
 dialog.ai-modal[open] {
   margin: 8vh auto auto;
 }
+.ai-terminal {
+  margin-top: 14px;
+  border: 1px solid var(--line);
+  background: var(--sunken);
+}
 dialog.ai-modal #ai-log {
-  max-height: min(260px, 34vh);
+  margin: 0;
+  border: 0;
+  max-height: min(240px, 30vh);
   overflow-y: auto;
+}
+.ai-working {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 14px;
+  border-top: 1px solid var(--line);
+  background: var(--sunken);
+  font-size: 12px;
+  font-weight: 600;
+}
+.ai-working[hidden] { display: none; }
+.ai-working-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ai-stop {
+  padding: 3px 10px;
+  font-size: 11px;
+}
+.ai-working-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: ai-dot-pulse 1.2s ease-in-out infinite;
+}
+.ai-working-text {
+  background: linear-gradient(90deg, var(--ink-soft) 0%, var(--strong) 45%, var(--ink-soft) 90%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: ai-shimmer 1.6s linear infinite;
+}
+@keyframes ai-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+@keyframes ai-dot-pulse {
+  0%, 100% { opacity: .45; transform: scale(.85); }
+  50% { opacity: 1; transform: scale(1.1); }
+}
+.ai-fixes {
+  border-top: 1px solid var(--line);
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--surface);
+}
+.ai-fixes[hidden] { display: none; }
+.ai-fix-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.ai-fix-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+  font-size: 11.5px;
+}
+.ai-fix-meta code {
+  font-family: monospace;
+  font-size: 11px;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+.ai-term-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+.ai-term-prompt {
+  font: 700 13px/1 monospace;
+  color: var(--accent);
+}
+.ai-term-bar input {
+  flex: 1;
+  min-width: 0;
+  font: 12px/1.4 monospace;
+  padding: 7px 10px;
+}
+.ai-term-bar button {
+  flex: none;
+  padding: 7px 10px;
+  font-size: 11.5px;
 }
 .ai-key-row {
   display: flex;
