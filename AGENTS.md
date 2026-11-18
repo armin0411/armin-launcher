@@ -42,3 +42,7 @@ All fields in these objects other than `prerelease` are nonempty strings. `launc
 4. Parse the JSON and check the root and entry fields, types, supported variants, source/install compatibility, unique IDs, color and URL formats, and nonempty strings. Check each changed glob against an actual intended release asset and each changed package against its authoritative metadata. Review the diff and report verification limits. Never execute a downloaded artifact merely to validate the catalog.
 
 The bundled suite's upstream Arch build derives the installed package name from the desktop-file bundle ID; confirm exceptions against the actual package. Upstream release metadata and the upstream catalog are evidence, not an installation instruction. Do not alter unrelated launcher, UI, or desktop files when assigned only catalog work.
+
+## Git workflow
+
+After making and verifying changes in this repository (running `./launchcraft-ctl validate` and `python3 -m unittest discover -s tests -v`), commit the changes with a clear message and push to `origin main`.

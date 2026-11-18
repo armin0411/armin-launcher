@@ -312,6 +312,8 @@ main.list .section-divider {
   border: 1px solid var(--line);
 }
 .card {
+  display: flex;
+  flex-direction: column;
   background: var(--surface);
   border: 1px solid color-mix(in srgb, var(--line) 72%, var(--ink-soft));
   box-shadow: var(--card-shadow);
@@ -401,7 +403,7 @@ main.list .section-divider {
   opacity: .8;
   margin-bottom: 10px;
 }
-.card-inner { padding: 15px 16px 13px; }
+.card-inner { flex: 1; display: flex; flex-direction: column; padding: 15px 16px 13px; }
 .app-top { display: flex; align-items: center; gap: 11px; }
 .app-icon {
   width: 36px;
@@ -490,7 +492,7 @@ main.list .section-divider {
   border: 1px solid var(--line);
   color: var(--ink-soft);
 }
-.app-meta { display: flex; gap: 10px; align-items: center; justify-content: space-between; }
+.app-meta { margin-top: auto; display: flex; gap: 10px; align-items: center; justify-content: space-between; }
 .version { font-size: 11px; font-weight: 500; color: var(--ink-soft); overflow-wrap: anywhere; line-height: 1.4; }
 .version .latest { color: var(--strong); font-weight: 600; }
 .version .arrow { padding: 0 4px; color: var(--muted); }
