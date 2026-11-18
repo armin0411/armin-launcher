@@ -1468,6 +1468,16 @@ class Engine:
         app = self.app(appid)
         if not app or not self.installed(app):
             raise ValueError('App is not installed')
+        if not IS_WIN:
+            x11_dir = Path('/tmp/.X11-unix')
+            if x11_dir.is_dir():
+                for sock in x11_dir.glob('X[0-9]*_'):
+                    target = sock.with_name(sock.name[:-1])
+                    if sock.is_socket() and not target.exists():
+                        try:
+                            target.symlink_to(sock.name)
+                        except OSError:
+                            pass
         kw = {'creationflags': subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP} if IS_WIN else {'start_new_session': True}
         subprocess.Popen(self.launch_argv(app), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **kw)
 
