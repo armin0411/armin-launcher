@@ -12,7 +12,8 @@
       "source": {
         "type": "github_release",
         "repo": "storytold/photocraft",
-        "asset_pattern": "photocraft-*-linux-x86_64.pkg.tar.zst"
+        "asset_pattern": "photocraft-*-linux-x86_64.pkg.tar.zst",
+        "prerelease": false
       },
       "install": {
         "type": "pacman_pkg",
@@ -32,7 +33,8 @@
       "source": {
         "type": "github_release",
         "repo": "storytold/vectorcraft",
-        "asset_pattern": "vectorcraft-*-linux-x86_64.pkg.tar.zst"
+        "asset_pattern": "vectorcraft-*-linux-x86_64.pkg.tar.zst",
+        "prerelease": false
       },
       "install": {
         "type": "pacman_pkg",
@@ -52,7 +54,8 @@
       "source": {
         "type": "github_release",
         "repo": "storytold/filmcraft",
-        "asset_pattern": "filmcraft-*-linux-x86_64.pkg.tar.zst"
+        "asset_pattern": "filmcraft-*-linux-x86_64.pkg.tar.zst",
+        "prerelease": false
       },
       "install": {
         "type": "pacman_pkg",
@@ -72,7 +75,8 @@
       "source": {
         "type": "github_release",
         "repo": "storytold/lightcraft",
-        "asset_pattern": "lightcraft-*-linux-x86_64.pkg.tar.zst"
+        "asset_pattern": "lightcraft-*-linux-x86_64.pkg.tar.zst",
+        "prerelease": false
       },
       "install": {
         "type": "pacman_pkg",
@@ -92,7 +96,8 @@
       "source": {
         "type": "github_release",
         "repo": "storytold/pdfcraft",
-        "asset_pattern": "pdfcraft-*-linux-x86_64.pkg.tar.zst"
+        "asset_pattern": "pdfcraft-*-linux-x86_64.pkg.tar.zst",
+        "prerelease": false
       },
       "install": {
         "type": "pacman_pkg",
@@ -112,7 +117,8 @@
       "source": {
         "type": "github_release",
         "repo": "storytold/effectcraft",
-        "asset_pattern": "effectcraft-*-linux-x86_64.pkg.tar.zst"
+        "asset_pattern": "effectcraft-*-linux-x86_64.pkg.tar.zst",
+        "prerelease": false
       },
       "install": {
         "type": "pacman_pkg",
@@ -132,7 +138,8 @@
       "source": {
         "type": "github_release",
         "repo": "storytold/anicraft",
-        "asset_pattern": "anicraft-*-linux-x86_64.pkg.tar.zst"
+        "asset_pattern": "anicraft-*-linux-x86_64.pkg.tar.zst",
+        "prerelease": false
       },
       "install": {
         "type": "pacman_pkg",
@@ -152,7 +159,8 @@
       "source": {
         "type": "github_release",
         "repo": "storytold/designcraft",
-        "asset_pattern": "designcraft-*-linux-x86_64.pkg.tar.zst"
+        "asset_pattern": "designcraft-*-linux-x86_64.pkg.tar.zst",
+        "prerelease": false
       },
       "install": {
         "type": "pacman_pkg",
@@ -172,7 +180,8 @@
       "source": {
         "type": "github_release",
         "repo": "storytold/figcraft",
-        "asset_pattern": "figcraft-*-linux-x86_64.pkg.tar.zst"
+        "asset_pattern": "figcraft-*-linux-x86_64.pkg.tar.zst",
+        "prerelease": false
       },
       "install": {
         "type": "pacman_pkg",
@@ -192,7 +201,8 @@
       "source": {
         "type": "github_release",
         "repo": "storytold/soundcraft",
-        "asset_pattern": "soundcraft-*-linux-x86_64.pkg.tar.zst"
+        "asset_pattern": "soundcraft-*-linux-x86_64.pkg.tar.zst",
+        "prerelease": false
       },
       "install": {
         "type": "pacman_pkg",
@@ -212,7 +222,8 @@
       "source": {
         "type": "github_release",
         "repo": "storytold/wordcraft",
-        "asset_pattern": "wordcraft-*-linux-x86_64.pkg.tar.zst"
+        "asset_pattern": "wordcraft-*-linux-x86_64.pkg.tar.zst",
+        "prerelease": false
       },
       "install": {
         "type": "pacman_pkg",
@@ -232,7 +243,8 @@
       "source": {
         "type": "github_release",
         "repo": "storytold/deckcraft",
-        "asset_pattern": "deckcraft-*-linux-x86_64.pkg.tar.zst"
+        "asset_pattern": "deckcraft-*-linux-x86_64.pkg.tar.zst",
+        "prerelease": false
       },
       "install": {
         "type": "pacman_pkg",
@@ -252,7 +264,8 @@
       "source": {
         "type": "github_release",
         "repo": "storytold/cadcraft",
-        "asset_pattern": "cadcraft-*-linux-x86_64.pkg.tar.zst"
+        "asset_pattern": "cadcraft-*-linux-x86_64.pkg.tar.zst",
+        "prerelease": false
       },
       "install": {
         "type": "pacman_pkg",
@@ -272,7 +285,8 @@
       "source": {
         "type": "github_release",
         "repo": "storytold/gridcraft",
-        "asset_pattern": "gridcraft-*-linux-x86_64.pkg.tar.zst"
+        "asset_pattern": "gridcraft-*-linux-x86_64.pkg.tar.zst",
+        "prerelease": false
       },
       "install": {
         "type": "pacman_pkg",
@@ -292,7 +306,8 @@
       "source": {
         "type": "github_release",
         "repo": "storytold/texturecraft",
-        "asset_pattern": "texturecraft-*-linux-x86_64.pkg.tar.zst"
+        "asset_pattern": "texturecraft-*-linux-x86_64.pkg.tar.zst",
+        "prerelease": false
       },
       "install": {
         "type": "pacman_pkg",
@@ -312,7 +327,8 @@
       "source": {
         "type": "github_release",
         "repo": "storytold/materialcraft",
-        "asset_pattern": "materialcraft-*-linux-x86_64.pkg.tar.zst"
+        "asset_pattern": "materialcraft-*-linux-x86_64.pkg.tar.zst",
+        "prerelease": false
       },
       "install": {
         "type": "pacman_pkg",
@@ -332,7 +348,8 @@
       "source": {
         "type": "github_release",
         "repo": "storytold/craft-anything",
-        "asset_pattern": "craft-anything-*-linux-x86_64.pkg.tar.zst"
+        "asset_pattern": "craft-anything-*-linux-x86_64.pkg.tar.zst",
+        "prerelease": false
       },
       "install": {
         "type": "pacman_pkg",
@@ -352,7 +369,8 @@
       "source": {
         "type": "github_release",
         "repo": "tangency-labs/solidcraft",
-        "asset_pattern": "solidcraft-*-linux-x86_64.pkg.tar.zst"
+        "asset_pattern": "solidcraft-*-linux-x86_64.pkg.tar.zst",
+        "prerelease": false
       },
       "install": {
         "type": "pacman_pkg",
@@ -372,7 +390,8 @@
       "source": {
         "type": "github_release",
         "repo": "UCS-Care-Group/mailcraft",
-        "asset_pattern": "mailcraft-*-linux-x86_64.AppImage"
+        "asset_pattern": "mailcraft-*-linux-x86_64.AppImage",
+        "prerelease": false
       },
       "install": {
         "type": "appimage",
@@ -487,7 +506,8 @@
       "source": {
         "type": "github_release",
         "repo": "tangency-labs/fieldcraft",
-        "asset_pattern": "fieldcraft-*-linux-x86_64.AppImage"
+        "asset_pattern": "fieldcraft-*-linux-x86_64.AppImage",
+        "prerelease": false
       },
       "install": {
         "type": "appimage",
@@ -526,7 +546,8 @@
       "source": {
         "type": "github_release",
         "repo": "jub0t/Concat",
-        "asset_pattern": "Concat-*-x86_64.AppImage"
+        "asset_pattern": "Concat-*-x86_64.AppImage",
+        "prerelease": false
       },
       "install": {
         "type": "appimage",
@@ -546,7 +567,8 @@
       "source": {
         "type": "github_release",
         "repo": "jaisurya-dev-art/rigby2d",
-        "asset_pattern": "Rigby2D_*_amd64.AppImage"
+        "asset_pattern": "Rigby2D_*_amd64.AppImage",
+        "prerelease": false
       },
       "install": {
         "type": "appimage",

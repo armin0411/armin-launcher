@@ -136,6 +136,9 @@ def validate_catalog(data):
     return data
 
 
+APP_KEYS = ('id', 'name', 'publisher', 'category', 'tagline', 'accent', 'website', 'source', 'install', 'hidden')
+
+
 class Catalog:
     def __init__(self, path):
         self.path = Path(path).resolve()
@@ -318,9 +321,54 @@ class Engine:
                 return f'/icons/{appid}.{ext}'
         return None
 
+    def cpu_info(self):
+        cores = os.cpu_count() or 4
+        model = f'{cores}-core CPU'
+        cpuinfo = Path('/proc/cpuinfo')
+        if cpuinfo.is_file():
+            try:
+                for line in cpuinfo.read_text(errors='ignore').splitlines():
+                    if line.lower().startswith('model name'):
+                        model = line.split(':', 1)[1].strip()
+                        break
+            except OSError:
+                pass
+        return {'cores': cores, 'model': model}
+
+    def load_details(self):
+        det_path = ROOT / 'ui' / 'details.json'
+        if det_path.is_file():
+            try:
+                return json.loads(det_path.read_text())
+            except Exception:
+                pass
+        return {}
+
+    def app_build_info(self, app, detail=None, cores=None):
+        bi = (detail or {}).get('build_info')
+        src = app.get('source') or {}
+        if isinstance(bi, dict) and 'from_source' in bi:
+            from_source = bool(bi['from_source'])
+        else:
+            from_source = src.get('type') == 'aur' and not str(src.get('package', '')).endswith('-bin')
+        if not from_source:
+            return None
+        cores = cores or (os.cpu_count() or 4)
+        est_gb = float((bi or {}).get('estimated_gb') or 2.5)
+        base_mins = float((bi or {}).get('base_minutes_8core') or 10.0)
+        est_mins = max(1, round(base_mins * (8.0 / max(1, cores))))
+        return {
+            'from_source': True,
+            'estimated_gb': round(est_gb, 1),
+            'base_minutes_8core': round(base_mins, 1),
+            'estimated_minutes': est_mins,
+        }
+
     def snapshot(self):
         # Disk reads ensure another agent's catalog changes appear without a restart.
         apps = copy.deepcopy(self.catalog.load()['apps'])
+        details = self.load_details()
+        cpu = self.cpu_info()
         with self.lock:
             for app in apps:
                 release = self.state['releases'].get(app['id'], {})
@@ -333,7 +381,8 @@ class Engine:
                 app['icon'] = self.icon_url(app['id'])
                 app['compatible'] = self.is_compatible(app)
                 app['data_paths'] = [str(p) for p in self.user_data_paths(app)]
-            return dict(apps=apps, busy=self.busy, refreshing=self.refreshing, ai_running=self.ai_running, ai_report=self.ai_report, ai_configured=bool(self.get_ai_key('openai')), ai_keys={p: bool(self.get_ai_key(p)) for p in ('openai', 'anthropic', 'gemini', 'openrouter', 'custom')}, ai_models=copy.deepcopy(self.state.get('ai_models', {})), notice=self.notice, last_error=self.last_error, warnings=self.warnings, platform=self.platform, prefs=copy.deepcopy(self.state.get('prefs', {})), revision=time.monotonic())
+                app['build_info'] = self.app_build_info(app, details.get(app['id']), cpu['cores'])
+            return dict(apps=apps, busy=self.busy, refreshing=self.refreshing, ai_running=self.ai_running, ai_report=self.ai_report, ai_configured=bool(self.get_ai_key('openai')), ai_keys={p: bool(self.get_ai_key(p)) for p in ('openai', 'anthropic', 'gemini', 'openrouter', 'custom')}, ai_key_profiles={p: self.public_ai_keys(p) for p in ('openai', 'anthropic', 'gemini', 'openrouter', 'custom')}, ai_active_keys={p: self.active_ai_key_id(p) for p in ('openai', 'anthropic', 'gemini', 'openrouter', 'custom')}, ai_models=copy.deepcopy(self.state.get('ai_models', {})), notice=self.notice, last_error=self.last_error, warnings=self.warnings, platform=self.platform, cpu=cpu, prefs=copy.deepcopy(self.state.get('prefs', {})), revision=time.monotonic())
 
     def newer(self, latest, installed):
         if installed == 'unknown':
@@ -353,7 +402,98 @@ class Engine:
             return False
         return pa > pb
 
+    @staticmethod
+    def _mask_key(key):
+        s = (key or '').strip()
+        if len(s) >= 10:
+            return f'{s[:4]}…{s[-4:]}'
+        return '••••' if s else ''
+
+    def _ensure_key_profiles(self, provider):
+        secrets_box = self.state.setdefault('secrets', {})
+        profiles_box = secrets_box.setdefault('ai_key_profiles', {})
+        entries = profiles_box.setdefault(provider, [])
+        if not isinstance(entries, list):
+            entries = []
+            profiles_box[provider] = entries
+        legacy = ''
+        keys = secrets_box.get('ai_keys', {})
+        if isinstance(keys, dict) and isinstance(keys.get(provider), str):
+            legacy = keys[provider].strip()
+        if not legacy and provider == 'openai':
+            legacy = str(secrets_box.get('openai_api_key', '')).strip()
+        if legacy and not any(e.get('key') == legacy for e in entries if isinstance(e, dict)):
+            kid = hashlib.sha256(legacy.encode()).hexdigest()[:8]
+            entries.insert(0, {'id': kid, 'label': f'Key 1 ({self._mask_key(legacy)})', 'key': legacy})
+        active_box = secrets_box.setdefault('ai_active_key', {})
+        if entries and active_box.get(provider) not in {e.get('id') for e in entries if isinstance(e, dict)}:
+            active_box[provider] = entries[0]['id']
+        return entries
+
+    def public_ai_keys(self, provider):
+        entries = self._ensure_key_profiles(provider)
+        return [{'id': e['id'], 'label': e.get('label') or self._mask_key(e.get('key', '')), 'masked': self._mask_key(e.get('key', ''))} for e in entries if isinstance(e, dict) and e.get('key')]
+
+    def active_ai_key_id(self, provider):
+        self._ensure_key_profiles(provider)
+        return self.state.get('secrets', {}).get('ai_active_key', {}).get(provider, '')
+
+    def save_ai_key(self, provider, key, label=''):
+        k = (key or '').strip()
+        if not k:
+            return ''
+        with self.lock:
+            entries = self._ensure_key_profiles(provider)
+            existing = next((e for e in entries if e.get('key') == k), None)
+            if existing:
+                if label.strip():
+                    existing['label'] = f'{label.strip()[:40]} ({self._mask_key(k)})'
+                kid = existing['id']
+            else:
+                kid = hashlib.sha256(f'{provider}:{k}'.encode()).hexdigest()[:8]
+                lbl = f'{label.strip()[:40]} ({self._mask_key(k)})' if label.strip() else f'Key {len(entries) + 1} ({self._mask_key(k)})'
+                entries.append({'id': kid, 'label': lbl, 'key': k})
+            self.state['secrets'].setdefault('ai_active_key', {})[provider] = kid
+            self.state['secrets'].setdefault('ai_keys', {})[provider] = k
+            self.save()
+            return kid
+
+    def select_ai_key(self, provider, key_id):
+        with self.lock:
+            entries = self._ensure_key_profiles(provider)
+            found = next((e for e in entries if e.get('id') == key_id), None)
+            if not found:
+                raise ValueError('Saved API key not found')
+            self.state['secrets'].setdefault('ai_active_key', {})[provider] = found['id']
+            self.state['secrets'].setdefault('ai_keys', {})[provider] = found['key']
+            self.save()
+
+    def delete_ai_key(self, provider, key_id):
+        with self.lock:
+            entries = self._ensure_key_profiles(provider)
+            kept = [e for e in entries if e.get('id') != key_id]
+            self.state['secrets']['ai_key_profiles'][provider] = kept
+            active_box = self.state['secrets'].setdefault('ai_active_key', {})
+            keys_box = self.state['secrets'].setdefault('ai_keys', {})
+            if kept:
+                if active_box.get(provider) == key_id or active_box.get(provider) not in {e['id'] for e in kept}:
+                    active_box[provider] = kept[0]['id']
+                active_entry = next(e for e in kept if e['id'] == active_box[provider])
+                keys_box[provider] = active_entry['key']
+            else:
+                active_box.pop(provider, None)
+                keys_box.pop(provider, None)
+                if provider == 'openai':
+                    self.state['secrets'].pop('openai_api_key', None)
+            self.save()
+
     def get_ai_key(self, provider='openai'):
+        entries = self._ensure_key_profiles(provider)
+        active_id = self.state.get('secrets', {}).get('ai_active_key', {}).get(provider)
+        if active_id:
+            found = next((e.get('key', '').strip() for e in entries if e.get('id') == active_id), '')
+            if found:
+                return found
         env_map = {'openai': 'OPENAI_API_KEY', 'anthropic': 'ANTHROPIC_API_KEY', 'gemini': 'GEMINI_API_KEY', 'openrouter': 'OPENROUTER_API_KEY'}
         env_var = env_map.get(provider, '')
         if env_var and os.environ.get(env_var, '').strip():
@@ -377,7 +517,7 @@ class Engine:
                 'messages': [{'role': 'user', 'content': user_payload}],
             }).encode()
             req = urllib.request.Request('https://api.anthropic.com/v1/messages', data=body, headers={'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01'}, method='POST')
-            with urllib.request.urlopen(req, timeout=60) as resp:
+            with urllib.request.urlopen(req, timeout=180) as resp:
                 text = json.loads(resp.read())['content'][0]['text']
         elif provider == 'gemini':
             if not key:
@@ -389,7 +529,7 @@ class Engine:
                 'generationConfig': {'responseMimeType': 'application/json'},
             }).encode()
             req = urllib.request.Request(f'https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={urllib.parse.quote(key, safe="")}', data=body, headers={'Content-Type': 'application/json'}, method='POST')
-            with urllib.request.urlopen(req, timeout=60) as resp:
+            with urllib.request.urlopen(req, timeout=180) as resp:
                 text = json.loads(resp.read())['candidates'][0]['content']['parts'][0]['text']
         else:
             endpoint = {'openai': 'https://api.openai.com/v1', 'openrouter': 'https://openrouter.ai/api/v1'}.get(provider, (base_url or '').strip().rstrip('/'))
@@ -409,7 +549,7 @@ class Engine:
                 ],
             }).encode()
             req = urllib.request.Request(f'{endpoint}/chat/completions', data=body, headers=headers, method='POST')
-            with urllib.request.urlopen(req, timeout=60) as resp:
+            with urllib.request.urlopen(req, timeout=180) as resp:
                 text = json.loads(resp.read())['choices'][0]['message']['content']
         cleaned = re.sub(r'^```(?:json)?\s*|\s*```$', '', text.strip(), flags=re.I)
         return json.loads(cleaned)
@@ -471,23 +611,50 @@ class Engine:
                 details = json.loads(det_path.read_text()) if det_path.is_file() else {}
 
                 # 1. Gather live facts in Python
+                noise_asset_re = re.compile(r'(\.(sha256|sha512|sha1|md5|sig|asc|zsync|blockmap)|arm64|aarch64|armv7|i386|i686)', re.I)
                 facts = []
-                for a in linux_cat['apps']:
+                total_apps = len(linux_cat['apps'])
+                for idx_app, a in enumerate(linux_cat['apps'], 1):
                     aid = a['id']
+                    if idx_app == 1 or idx_app % 5 == 0 or idx_app == total_apps:
+                        self.ai_report = f'Checking catalog & releases ({idx_app}/{total_apps}): {a["name"]}…'
+                        self.emit('state', self.snapshot())
                     has_icon = any((ROOT / 'ui' / 'icons' / f'{aid}.{e}').is_file() for e in ('png', 'svg'))
                     shots = [s for s in details.get(aid, {}).get('shots', []) if s.get('url', '').startswith('/shots/') and (ROOT / 'ui' / s['url'].lstrip('/')).is_file()]
-                    item = {'id': aid, 'name': a['name'], 'source': a['source'], 'install': a['install'], 'has_icon': has_icon, 'local_shots': len(shots)}
+                    item = {'id': aid, 'name': a['name'], 'source': a['source'], 'install': a['install'], 'has_icon': has_icon, 'local_shots': len(shots), 'build_info': details.get(aid, {}).get('build_info')}
                     if a['source']['type'] == 'github_release':
                         try:
                             with self.request(f'{self.api_base}/repos/{a["source"]["repo"]}/releases/latest', {'Accept': 'application/vnd.github+json'}) as r:
                                 rel = json.load(r)
                             item['latest_tag'] = rel.get('tag_name')
-                            item['assets'] = [x['name'] for x in rel.get('assets', [])[:25]]
+                            item['assets'] = [x['name'] for x in rel.get('assets', []) if not noise_asset_re.search(x['name'])]
                         except urllib.error.HTTPError as e:
                             item['api_status'] = e.code
                         except Exception as e:
                             item['api_error'] = str(e)
                     facts.append(item)
+                win_facts = [{'id': a['id'], 'name': a['name'], 'source': a['source'], 'install': a['install']} for a in win_cat['apps']]
+
+                known_repos = {a['source'].get('repo', '').lower() for a in linux_cat['apps'] if a['source']['type'] == 'github_release'}
+                artcraft_repos = []
+                try:
+                    self.ai_report = f'Checked {len(facts)} apps\nChecking ArtCraft (storytold) for new releases…'
+                    self.emit('state', self.snapshot())
+                    with self.request(f'{self.api_base}/users/storytold/repos?per_page=30&sort=updated', {'Accept': 'application/vnd.github+json'}) as r:
+                        for repo in json.load(r):
+                            rname = repo.get('full_name', '')
+                            if not rname or repo.get('archived') or repo.get('fork') or rname.lower() in known_repos:
+                                continue
+                            try:
+                                with self.request(f'{self.api_base}/repos/{rname}/releases/latest', {'Accept': 'application/vnd.github+json'}) as rr:
+                                    rel = json.load(rr)
+                                assets = [x['name'] for x in rel.get('assets', []) if not noise_asset_re.search(x['name'])]
+                                if assets:
+                                    artcraft_repos.append({'repo': rname, 'name': repo.get('name'), 'description': repo.get('description'), 'homepage': repo.get('homepage'), 'latest_tag': rel.get('tag_name'), 'assets': assets})
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
 
                 search_hits = []
                 if prompt.strip():
@@ -499,7 +666,7 @@ class Engine:
                                 assets = []
                                 try:
                                     with self.request(f'{self.api_base}/repos/{rname}/releases/latest', {'Accept': 'application/vnd.github+json'}) as rr:
-                                        assets = [x['name'] for x in json.load(rr).get('assets', [])[:25]]
+                                        assets = [x['name'] for x in json.load(rr).get('assets', [])]
                                 except Exception:
                                     pass
                                 search_hits.append({'repo': rname, 'description': repo.get('description'), 'homepage': repo.get('homepage'), 'assets': assets})
@@ -511,48 +678,103 @@ class Engine:
                     except Exception:
                         pass
 
-                log.append(f'Checked {len(facts)} apps' + (f' + search hits for "{prompt.strip()}"' if prompt.strip() else ''))
+                log.append(f'Checked {len(facts)} apps' + (f' + {len(artcraft_repos)} new ArtCraft releases' if artcraft_repos else '') + (f' + search hits for "{prompt.strip()}"' if prompt.strip() else ''))
                 try:
                     self.fetch_ai_models(provider, key, base_url)
                 except Exception:
                     pass
-                self.ai_report = '\n'.join(log) + f'\nAsking {provider} ({model or "default"}) to review catalog & assets…'
+                self.ai_report = '\n'.join(log) + f'\n⠋ Asking {provider} ({model or "default"}) to review catalog & assets… (0s / 180s max)'
                 self.emit('state', self.snapshot())
 
                 # 2. Call selected AI provider
                 sys_prompt = (
                     'You maintain Armin Launcher (catalog.json for Linux x86_64 and catalog.windows.json for Windows). '
-                    'Given the live app facts and optional user request, return ONLY valid JSON with keys: '
-                    '{"summary": str, "linux_updates": [full_app_obj], "win_updates": [full_app_obj], '
-                    '"remove_ids": [str], "assets": [{"id": str, "icon_url": str|null, "shot_url": str|null, "shot_caption": str, "about": str, "features": [{"title": str, "text": str}]}]}. '
-                    'Only suggest real, verified assets seen in the provided facts or search_hits. Keep lists empty if no changes are needed.'
+                    'Each app object MUST have exact keys: id, name, publisher, category, tagline, accent (#rrggbb), website (https://...), source, install, hidden (bool). '
+                    'Valid source: {"type": "github_release", "repo": "owner/repo", "asset_pattern": "glob", "prerelease": bool} or {"type": "arch_repo"|"aur"|"winget", "package": "pkg"}. '
+                    'Valid install: {"type": "appimage", "binary_name": "name", "launch": "cmd"} | {"type": "tarball"|"zip", "bin": "rel/path", "launch": "cmd"} | {"type": "pacman_pkg"|"pacman"|"aur"|"winget"|"msi"|"exe", "package": "pkg", "launch": "cmd"}. '
+                    'Prefer pre-built downloadable versions (github_release, arch_repo, or -bin AUR) over compiling from source. '
+                    'If artcraft_repos contains any newly released ArtCraft app not yet in facts, propose adding it to linux_updates (and win_updates if Windows assets exist). '
+                    'Given the live app facts, win_facts, artcraft_repos, and optional user request, return ONLY valid JSON with keys: '
+                    '{"summary": str, "linux_updates": [app_obj], "win_updates": [app_obj], '
+                    '"remove_ids": [str], "assets": [{"id": str, "icon_url": str|null, "shot_url": str|null, "shot_caption": str, "about": str, "features": [{"title": str, "text": str}], "build_info": {"from_source": bool, "estimated_gb": number, "base_minutes_8core": number}|null}]}. '
+                    'Only suggest real, verified assets seen in the provided facts, artcraft_repos, or search_hits. Keep lists empty if no changes are needed.'
                 )
-                user_payload = json.dumps({'request': prompt.strip() or 'Audit catalog for better install/update methods, unreleased removals, and missing icons/screenshots.', 'facts': facts, 'search_hits': search_hits})
-                plan = self.call_ai_provider(provider, key, model, base_url, sys_prompt, user_payload)
+                user_payload = json.dumps(
+                    {'request': prompt.strip() or 'Audit catalog for better install/update methods, new ArtCraft apps, unreleased removals, and missing icons/screenshots.', 'facts': facts, 'win_facts': win_facts, 'artcraft_repos': artcraft_repos, 'search_hits': search_hits},
+                    separators=(',', ':'),
+                )
+                def ask_with_heartbeat(payload, label):
+                    done = threading.Event()
+                    t0 = time.monotonic()
+                    frames = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+
+                    def pulse():
+                        tick = 0
+                        while not done.wait(1):
+                            tick += 1
+                            secs = int(time.monotonic() - t0)
+                            spin = frames[tick % len(frames)]
+                            self.ai_report = '\n'.join(log) + f'\n{spin} {label} ({secs}s / 180s max)'
+                            self.emit('state', self.snapshot())
+
+                    threading.Thread(target=pulse, daemon=True).start()
+                    try:
+                        return self.call_ai_provider(provider, key, model, base_url, sys_prompt, payload)
+                    finally:
+                        done.set()
+
+                ask_label = f'Asking {provider} ({model or "default"}) to review catalog & assets…'
+                try:
+                    plan = ask_with_heartbeat(user_payload, ask_label)
+                except Exception as first_err:
+                    if 'timed out' in str(first_err).lower() or isinstance(first_err, TimeoutError):
+                        log.append('AI request timed out — retrying once…')
+                        self.ai_report = '\n'.join(log)
+                        self.emit('state', self.snapshot())
+                        plan = ask_with_heartbeat(user_payload, f'Retrying {provider} ({model or "default"})…')
+                    else:
+                        raise
+
+                def build_and_validate(candidate):
+                    nl = copy.deepcopy(linux_cat)
+                    nw = copy.deepcopy(win_cat)
+                    rids = set(candidate.get('remove_ids') or [])
+                    if rids:
+                        nl['apps'] = [a for a in nl['apps'] if a['id'] not in rids]
+                        nw['apps'] = [a for a in nw['apps'] if a['id'] not in rids]
+
+                    def upsert(cat_obj, items):
+                        for item in items or []:
+                            if not isinstance(item, dict) or not item.get('id'):
+                                continue
+                            cleaned = {k: item[k] for k in APP_KEYS if k in item and item[k] is not None}
+                            idx = next((i for i, x in enumerate(cat_obj['apps']) if x['id'] == cleaned['id']), None)
+                            if idx is None:
+                                cleaned.setdefault('hidden', False)
+                                cat_obj['apps'].append(cleaned)
+                            else:
+                                cat_obj['apps'][idx] = {**cat_obj['apps'][idx], **cleaned}
+
+                    upsert(nl, candidate.get('linux_updates'))
+                    upsert(nw, candidate.get('win_updates'))
+                    validate_catalog(nl)
+                    if nw['apps']:
+                        validate_catalog(nw)
+                    return nl, nw, rids
+
+                try:
+                    new_linux, new_win, remove_ids = build_and_validate(plan)
+                except Exception as val_err:
+                    log.append(f'AI plan failed validation ({val_err}) — asking AI to fix it…')
+                    self.ai_report = '\n'.join(log)
+                    self.emit('state', self.snapshot())
+                    repair_payload = json.dumps({'error': str(val_err), 'previous_plan': plan, 'facts': facts, 'win_facts': win_facts}, separators=(',', ':'))
+                    plan = ask_with_heartbeat(repair_payload, f'Repairing AI plan with {provider} ({model or "default"})…')
+                    new_linux, new_win, remove_ids = build_and_validate(plan)
+
                 log.append('AI summary: ' + str(plan.get('summary', 'Done.')))
-
-                # 3. Validate & apply safely
-                new_linux = copy.deepcopy(linux_cat)
-                new_win = copy.deepcopy(win_cat)
-                remove_ids = set(plan.get('remove_ids') or [])
                 if remove_ids:
-                    new_linux['apps'] = [a for a in new_linux['apps'] if a['id'] not in remove_ids]
-                    new_win['apps'] = [a for a in new_win['apps'] if a['id'] not in remove_ids]
                     log.append('Removed: ' + ', '.join(sorted(remove_ids)))
-
-                def upsert(cat_obj, items):
-                    for item in items or []:
-                        idx = next((i for i, x in enumerate(cat_obj['apps']) if x['id'] == item.get('id')), None)
-                        if idx is None:
-                            cat_obj['apps'].append(item)
-                        else:
-                            cat_obj['apps'][idx] = item
-
-                upsert(new_linux, plan.get('linux_updates'))
-                upsert(new_win, plan.get('win_updates'))
-                validate_catalog(new_linux)
-                if new_win['apps']:
-                    validate_catalog(new_win)
 
                 changed = False
                 if new_linux != linux_cat:
@@ -566,6 +788,17 @@ class Engine:
                     aid = asset.get('id', '')
                     if not re.fullmatch(r'[a-z0-9-]+', aid):
                         continue
+                    bi = asset.get('build_info')
+                    if isinstance(bi, dict):
+                        entry = details.setdefault(aid, {'about': asset.get('about', ''), 'features': asset.get('features', []), 'shots': []})
+                        entry['build_info'] = {
+                            'from_source': bool(bi.get('from_source', True)),
+                            'estimated_gb': round(max(0.1, float(bi.get('estimated_gb') or 2.5)), 1),
+                            'base_minutes_8core': round(max(1.0, float(bi.get('base_minutes_8core') or 10.0)), 1),
+                        }
+                        atomic_json(det_path, details)
+                        changed = True
+                        log.append(f'Updated build info for {aid}')
                     if asset.get('icon_url'):
                         try:
                             data = urllib.request.urlopen(urllib.request.Request(asset['icon_url'], headers={'User-Agent': 'ArminLauncher/1.0'}), timeout=15).read()
@@ -759,7 +992,7 @@ class Engine:
             self.warnings = warnings
             self.refreshing = False
 
-    def start(self, action, ids=None, clean=False):
+    def start(self, action, ids=None, clean=False, allow_build=False):
         terminal = ('Complete', 'Cancelled', 'Error')
         with self.lock:
             if action == 'refresh':
@@ -783,7 +1016,7 @@ class Engine:
                 elif action == 'uninstall':
                     self.uninstall(ids[0], clean=clean)
                 else:
-                    self.install_many(ids)
+                    self.install_many(ids, allow_build=allow_build)
             except Cancelled:
                 self.notice = 'Cancelled. Partial downloads are kept for resume.'
             except Exception as e:
@@ -911,27 +1144,68 @@ class Engine:
             if self.cancel.is_set():
                 raise Cancelled()
             for appid in ids:
-                self.status(appid, 'Installing', message='Authentication may be required. Package transactions finish safely before cancellation.')
+                self.status(appid, 'Installing', percent=5, message='Authentication may be required. Package transactions finish safely before cancellation.')
             # Do not terminate pacman in the middle of its database transaction.
-            with tempfile.TemporaryFile(mode='w+') as output:
-                process = subprocess.Popen(argv, stdout=output, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
-                process.wait()
-                output.seek(0)
-                log = output.read()[-10000:]
-                if process.returncode:
-                    raise ValueError(f'Installer exited {process.returncode}: {log.strip()}')
+            process = subprocess.Popen(
+                argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                text=True, errors='replace', bufsize=1,
+            )
+            tail = []
+            phase, pct, compiled = 'Installing', 5, 0
+            last_emit = 0.0
+            for raw in process.stdout:
+                tail.append(raw)
+                if len(tail) > 200:
+                    tail = tail[-120:]
+                line = raw.strip()
+                if not line:
+                    continue
+                new_phase, new_pct = phase, pct
+                m = re.search(r'(\d{1,3})%', line)
+                if m:
+                    val = min(98, max(5, int(m.group(1))))
+                    if val >= pct or phase != 'Installing':
+                        new_pct = val
+                elif re.search(r'Downloading|Cloning|Retrieving', line, re.I):
+                    new_phase, new_pct = 'Downloading', max(pct, 15)
+                elif re.search(r'Checking|Resolving|Validating', line, re.I):
+                    new_phase, new_pct = 'Preparing', max(pct, 25)
+                elif re.search(r'Making package|Extracting|Starting build', line, re.I):
+                    new_phase, new_pct = 'Building', max(pct, 35)
+                elif 'Compiling ' in line:
+                    compiled += 1
+                    new_phase = 'Building'
+                    new_pct = max(pct, min(82, 38 + compiled))
+                elif re.search(r'Packaging|Tidying|Creating package', line, re.I):
+                    new_phase, new_pct = 'Packaging', max(pct, 85)
+                elif re.search(r'\b(installing|upgrading)\b', line, re.I):
+                    new_phase, new_pct = 'Installing', max(pct, 92)
+                now = time.monotonic()
+                if (new_phase != phase or new_pct != pct) and (now - last_emit >= 0.15 or new_phase != phase):
+                    phase, pct, last_emit = new_phase, new_pct, now
+                    for appid in ids:
+                        self.status(appid, phase, percent=pct, message=line[:140])
+            process.wait()
+            log = ''.join(tail)[-10000:]
+            if process.returncode:
+                raise ValueError(f'Installer exited {process.returncode}: {log.strip()}')
 
     def app(self, appid):
         return next((a for a in self.catalog.load()['apps'] if a['id'] == appid), None)
 
-    def install_many(self, ids=None):
+    def install_many(self, ids=None, allow_build=False):
         apps = self.catalog.load()['apps']
+        details = self.load_details()
         if ids is None:
             snap = self.snapshot()
-            ids = [a['id'] for a in snap['apps'] if a['update'] and not a['hidden']]
+            ids = [a['id'] for a in snap['apps'] if a['update'] and not a['hidden'] and not a.get('build_info')]
         chosen = [a for a in apps if a['id'] in ids]
         if len(chosen) != len(set(ids)):
             raise ValueError('Unknown app ID')
+        if not allow_build:
+            for a in chosen:
+                if self.app_build_info(a, details.get(a['id'])):
+                    raise ValueError(f'{a["name"]} requires building from source; confirm BUILD to proceed')
         packages = []
         for a in chosen:
             self.status(a['id'], 'Queued')
@@ -998,7 +1272,12 @@ class Engine:
                         raise ValueError('Install yay or paru to manage AUR applications')
                     priv = self.privilege_cmd()
                     sudo_args = ['--sudo', priv[0], '--sudoflags', ' '.join(priv[1:])] if priv else []
-                    self.transaction([helper, '-S', '--needed', '--noconfirm', *sudo_args, ins['package']], [appid])
+                    try:
+                        self.transaction([helper, '-S', '--needed', '--noconfirm', *sudo_args, ins['package']], [appid])
+                    finally:
+                        for cache_dir in (self.home / '.cache' / 'yay' / ins['package'], self.home / '.cache' / 'paru' / 'clone' / ins['package']):
+                            if cache_dir.is_dir():
+                                shutil.rmtree(cache_dir, ignore_errors=True)
                     self.sync_mcp(app)
                 else:
                     raise ValueError(f'Installer type {ins["type"]} is not yet implemented on {self.platform}')
@@ -1445,14 +1724,32 @@ class Handler(http.server.BaseHTTPRequestHandler):
             path = urllib.parse.urlparse(self.path).path
             if path == '/api/refresh':
                 engine.start('refresh')
+            elif path == '/api/ai_keys':
+                provider = str(data.get('provider', 'openai')).strip().lower()
+                if provider not in ('openai', 'anthropic', 'gemini', 'openrouter', 'custom'):
+                    raise ValueError('Unsupported AI provider')
+                op = str(data.get('op', 'select')).strip().lower()
+                if op == 'add':
+                    raw_key = str(data.get('api_key', '')).strip()
+                    if not raw_key:
+                        raise ValueError('API key is required')
+                    engine.save_ai_key(provider, raw_key, str(data.get('label', '')))
+                elif op == 'select':
+                    engine.select_ai_key(provider, str(data.get('key_id', '')).strip())
+                elif op == 'delete':
+                    engine.delete_ai_key(provider, str(data.get('key_id', '')).strip())
+                else:
+                    raise ValueError('Unsupported ai_keys op')
+                self.json(200, engine.snapshot())
+                return
             elif path == '/api/ai_models':
                 provider = str(data.get('provider', 'openai')).strip().lower()
                 if provider not in ('openai', 'anthropic', 'gemini', 'openrouter', 'custom'):
                     raise ValueError('Unsupported AI provider')
                 if 'api_key' in data and str(data['api_key']).strip():
-                    with engine.lock:
-                        engine.state.setdefault('secrets', {}).setdefault('ai_keys', {})[provider] = str(data['api_key']).strip()
-                        engine.save()
+                    engine.save_ai_key(provider, str(data['api_key']).strip(), str(data.get('key_label', '')))
+                elif data.get('key_id'):
+                    engine.select_ai_key(provider, str(data['key_id']).strip())
                 models = engine.fetch_ai_models(provider, str(data.get('api_key', '')), str(data.get('base_url', '')))
                 self.json(200, {'models': models, 'ai_models': engine.state.get('ai_models', {})})
                 return
@@ -1460,19 +1757,28 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 provider = str(data.get('provider', 'openai')).strip().lower()
                 if provider not in ('openai', 'anthropic', 'gemini', 'openrouter', 'custom'):
                     raise ValueError('Unsupported AI provider')
+                model = str(data.get('model', '')).strip()
+                base_url = str(data.get('base_url', '')).strip()
                 if 'api_key' in data and str(data['api_key']).strip():
-                    with engine.lock:
-                        keys = engine.state.setdefault('secrets', {}).setdefault('ai_keys', {})
-                        keys[provider] = str(data['api_key']).strip()
-                        engine.save()
-                engine.ai_maintain(prompt=str(data.get('prompt', '')), model=str(data.get('model', '')), provider=provider, base_url=str(data.get('base_url', '')))
+                    engine.save_ai_key(provider, str(data['api_key']).strip(), str(data.get('key_label', '')))
+                elif data.get('key_id'):
+                    engine.select_ai_key(provider, str(data['key_id']).strip())
+                with engine.lock:
+                    prefs = engine.state.setdefault('prefs', {})
+                    prefs['ai_provider'] = provider
+                    if model:
+                        prefs.setdefault('ai_selected_models', {})[provider] = model[:200]
+                    if provider == 'custom' and base_url:
+                        prefs['ai_base_url'] = base_url[:300]
+                    engine.save()
+                engine.ai_maintain(prompt=str(data.get('prompt', '')), model=model, provider=provider, base_url=base_url)
                 self.json(200, engine.snapshot())
                 return
             elif path == '/api/install':
                 ids = data.get('ids')
                 if ids is not None and (not isinstance(ids, list) or not all(isinstance(i, str) for i in ids)):
                     raise ValueError('ids must be a list')
-                engine.start('install', ids)
+                engine.start('install', ids, allow_build=bool(data.get('allow_build', False)))
             elif path == '/api/cancel':
                 engine.cancel.set()
                 engine.notice = 'Cancellation requested. Active package transactions finish safely.'
@@ -1513,6 +1819,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
                                 kind = 'custom'
                             cleaned.append({'label': label[:60], 'url': url[:300], 'kind': kind})
                         prefs['profiles'] = cleaned
+                    if 'ai_provider' in data:
+                        ap = str(data['ai_provider']).strip().lower()
+                        if ap not in ('openai', 'anthropic', 'gemini', 'openrouter', 'custom'):
+                            raise ValueError('invalid ai_provider')
+                        prefs['ai_provider'] = ap
+                    if 'ai_base_url' in data:
+                        prefs['ai_base_url'] = str(data['ai_base_url']).strip()[:300]
+                    if 'ai_selected_models' in data:
+                        sm = data['ai_selected_models']
+                        if not isinstance(sm, dict):
+                            raise ValueError('ai_selected_models must be an object')
+                        cur = prefs.setdefault('ai_selected_models', {})
+                        for k, v in sm.items():
+                            kp = str(k).strip().lower()
+                            if kp in ('openai', 'anthropic', 'gemini', 'openrouter', 'custom') and isinstance(v, str) and v.strip():
+                                cur[kp] = v.strip()[:200]
                     engine.save()
                 self.json(200, {'ok': True})
                 return

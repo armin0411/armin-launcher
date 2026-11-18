@@ -12,7 +12,8 @@
       "source": {
         "type": "github_release",
         "repo": "storytold/photocraft",
-        "asset_pattern": "*.msi"
+        "asset_pattern": "photocraft-*-windows-x64.msi",
+        "prerelease": false
       },
       "install": {
         "type": "msi",
@@ -32,7 +33,8 @@
       "source": {
         "type": "github_release",
         "repo": "storytold/vectorcraft",
-        "asset_pattern": "*.msi"
+        "asset_pattern": "vectorcraft-*-windows-x64.msi",
+        "prerelease": false
       },
       "install": {
         "type": "msi",
@@ -52,7 +54,8 @@
       "source": {
         "type": "github_release",
         "repo": "storytold/filmcraft",
-        "asset_pattern": "*.msi"
+        "asset_pattern": "filmcraft-*-windows-x64.msi",
+        "prerelease": false
       },
       "install": {
         "type": "msi",
@@ -72,7 +75,8 @@
       "source": {
         "type": "github_release",
         "repo": "storytold/lightcraft",
-        "asset_pattern": "*.msi"
+        "asset_pattern": "lightcraft-*-windows-x64.msi",
+        "prerelease": false
       },
       "install": {
         "type": "msi",
@@ -92,7 +96,8 @@
       "source": {
         "type": "github_release",
         "repo": "storytold/pdfcraft",
-        "asset_pattern": "*.msi"
+        "asset_pattern": "pdfcraft-*-windows-x64.msi",
+        "prerelease": false
       },
       "install": {
         "type": "msi",
@@ -112,7 +117,8 @@
       "source": {
         "type": "github_release",
         "repo": "storytold/effectcraft",
-        "asset_pattern": "*.msi"
+        "asset_pattern": "effectcraft-*-windows-x64.msi",
+        "prerelease": false
       },
       "install": {
         "type": "msi",
@@ -132,7 +138,8 @@
       "source": {
         "type": "github_release",
         "repo": "storytold/anicraft",
-        "asset_pattern": "*.msi"
+        "asset_pattern": "anicraft-*-windows-x64.msi",
+        "prerelease": false
       },
       "install": {
         "type": "msi",
@@ -152,7 +159,8 @@
       "source": {
         "type": "github_release",
         "repo": "storytold/designcraft",
-        "asset_pattern": "*.msi"
+        "asset_pattern": "designcraft-*-windows-x64.msi",
+        "prerelease": false
       },
       "install": {
         "type": "msi",
@@ -172,7 +180,8 @@
       "source": {
         "type": "github_release",
         "repo": "storytold/figcraft",
-        "asset_pattern": "*.msi"
+        "asset_pattern": "figcraft-*-windows-x64.msi",
+        "prerelease": false
       },
       "install": {
         "type": "msi",
@@ -192,7 +201,8 @@
       "source": {
         "type": "github_release",
         "repo": "storytold/soundcraft",
-        "asset_pattern": "*.msi"
+        "asset_pattern": "soundcraft-*-windows-x64.msi",
+        "prerelease": false
       },
       "install": {
         "type": "msi",
@@ -212,7 +222,8 @@
       "source": {
         "type": "github_release",
         "repo": "storytold/wordcraft",
-        "asset_pattern": "*.msi"
+        "asset_pattern": "wordcraft-*-windows-x64.msi",
+        "prerelease": false
       },
       "install": {
         "type": "msi",
@@ -232,7 +243,8 @@
       "source": {
         "type": "github_release",
         "repo": "storytold/deckcraft",
-        "asset_pattern": "*.msi"
+        "asset_pattern": "deckcraft-*-windows-x64.msi",
+        "prerelease": false
       },
       "install": {
         "type": "msi",
@@ -252,7 +264,8 @@
       "source": {
         "type": "github_release",
         "repo": "storytold/cadcraft",
-        "asset_pattern": "*.msi"
+        "asset_pattern": "cadcraft-*-windows-x64.msi",
+        "prerelease": false
       },
       "install": {
         "type": "msi",
@@ -272,7 +285,8 @@
       "source": {
         "type": "github_release",
         "repo": "storytold/gridcraft",
-        "asset_pattern": "*.msi"
+        "asset_pattern": "gridcraft-*-windows-x64.msi",
+        "prerelease": false
       },
       "install": {
         "type": "msi",
@@ -292,7 +306,8 @@
       "source": {
         "type": "github_release",
         "repo": "storytold/texturecraft",
-        "asset_pattern": "*.msi"
+        "asset_pattern": "texturecraft-*-windows-x64.msi",
+        "prerelease": false
       },
       "install": {
         "type": "msi",
@@ -312,7 +327,8 @@
       "source": {
         "type": "github_release",
         "repo": "storytold/materialcraft",
-        "asset_pattern": "*.msi"
+        "asset_pattern": "materialcraft-*-windows-x64.msi",
+        "prerelease": false
       },
       "install": {
         "type": "msi",
@@ -332,7 +348,8 @@
       "source": {
         "type": "github_release",
         "repo": "storytold/craft-anything",
-        "asset_pattern": "*.msi"
+        "asset_pattern": "craft-anything-*-windows-x64.msi",
+        "prerelease": false
       },
       "install": {
         "type": "msi",
@@ -352,7 +369,8 @@
       "source": {
         "type": "github_release",
         "repo": "tangency-labs/solidcraft",
-        "asset_pattern": "*.msi"
+        "asset_pattern": "solidcraft-*-windows-x64.msi",
+        "prerelease": false
       },
       "install": {
         "type": "msi",
@@ -372,12 +390,13 @@
       "source": {
         "type": "github_release",
         "repo": "UCS-Care-Group/mailcraft",
-        "asset_pattern": "*.msi"
+        "asset_pattern": "mailcraft-*-windows-x64.msi",
+        "prerelease": false
       },
       "install": {
         "type": "msi",
         "package": "mailcraft",
-        "launch": "mailcraft.AppImage"
+        "launch": "mailcraft.exe"
       },
       "hidden": false
     },
@@ -487,7 +506,8 @@
       "source": {
         "type": "github_release",
         "repo": "tangency-labs/fieldcraft",
-        "asset_pattern": "fieldcraft-*-windows-x64.zip"
+        "asset_pattern": "fieldcraft-*-windows-x64.zip",
+        "prerelease": false
       },
       "install": {
         "type": "zip",
@@ -507,7 +527,8 @@
       "source": {
         "type": "github_release",
         "repo": "jub0t/Concat",
-        "asset_pattern": "Concat-*-windows-x86_64.msi"
+        "asset_pattern": "Concat-*-windows-x86_64.msi",
+        "prerelease": false
       },
       "install": {
         "type": "msi",
@@ -527,7 +548,8 @@
       "source": {
         "type": "github_release",
         "repo": "jaisurya-dev-art/rigby2d",
-        "asset_pattern": "Rigby2D_*_x64_en-US.msi"
+        "asset_pattern": "Rigby2D_*_x64_en-US.msi",
+        "prerelease": false
       },
       "install": {
         "type": "msi",

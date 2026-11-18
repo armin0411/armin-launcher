@@ -129,15 +129,16 @@ def main():
                 cdp.evaluate(f'document.querySelector({json.dumps(selector)}).click()')
             cdp.call('Emulation.setDeviceMetricsOverride', dict(width=1440, height=1100, deviceScaleFactor=1, mobile=False))
             cdp.until("document.querySelector('#counts strong')?.textContent !== undefined")
-            for light in (False, True):
-                cdp.evaluate(f"document.body.classList.toggle('light', {str(light).lower()})")
+            assert cdp.evaluate("currentTheme") == 'catppuccin'
+            for theme_id in ('default', 'light'):
+                cdp.evaluate(f"applyTheme('{theme_id}', false, false)")
                 assert cdp.evaluate("document.querySelector('#update-all').disabled")
                 colors = cdp.evaluate("(() => {const s = getComputedStyle(document.querySelector('#update-all')); return [s.backgroundColor, s.color, s.opacity];})()")
-                assert colors == (['rgb(231, 230, 226)', 'rgb(98, 99, 108)', '1'] if light else ['rgb(6, 6, 7)', 'rgb(147, 148, 157)', '1']), colors
-            cdp.evaluate("document.body.classList.remove('light'); window.smokeState = state; state = {...state, apps: state.apps.map((a,i) => i ? a : {...a, update:true, latest:'v-test'})}; render()")
+                assert colors == (['rgb(231, 230, 226)', 'rgb(98, 99, 108)', '1'] if theme_id == 'light' else ['rgb(6, 6, 7)', 'rgb(147, 148, 157)', '1']), colors
+            cdp.evaluate("applyTheme('catppuccin', false, false); window.smokeState = state; state = {...state, apps: state.apps.map((a,i) => i ? a : {...a, update:true, latest:'v-test'})}; render()")
             assert cdp.evaluate("!document.querySelector('#update-all').disabled")
-            cdp.until("getComputedStyle(document.querySelector('#update-all')).backgroundColor === 'rgb(45, 129, 255)'")
-            assert cdp.evaluate("getComputedStyle(document.querySelector('#update-all')).backgroundColor") == 'rgb(45, 129, 255)'
+            cdp.until("getComputedStyle(document.querySelector('#update-all')).backgroundColor === 'rgb(216, 181, 255)'")
+            assert cdp.evaluate("getComputedStyle(document.querySelector('#update-all')).backgroundColor") == 'rgb(216, 181, 255)'
             assert cdp.evaluate("getComputedStyle(document.querySelector('#update-all')).color") == 'rgb(255, 255, 255)'
             cdp.evaluate("state = window.smokeState; delete window.smokeState; render()")
             assert cdp.evaluate("document.querySelectorAll('.card').length") == len([a for a in initial['apps'] if not a['hidden']])

@@ -395,6 +395,49 @@ class ServerTests(Fixture):
             self.assertEqual(status, 200)
             self.assertTrue(data['apps'][0]['hidden'])
 
+    def test_prefs_remember_ai_provider_and_model(self):
+        with self.app_server() as (server, _):
+            status, _ = self.request(
+                server,
+                '/api/prefs',
+                {
+                    'ai_provider': 'gemini',
+                    'ai_base_url': 'http://localhost:11434/v1',
+                    'ai_selected_models': {'gemini': 'gemini-2.5-pro', 'openai': 'gpt-4.1'},
+                },
+                server.token,
+            )
+            self.assertEqual(status, 200)
+            status, state = self.request(server, '/api/state')
+            self.assertEqual(status, 200)
+            self.assertEqual(state['prefs']['ai_provider'], 'gemini')
+            self.assertEqual(state['prefs']['ai_base_url'], 'http://localhost:11434/v1')
+            self.assertEqual(state['prefs']['ai_selected_models']['gemini'], 'gemini-2.5-pro')
+
+    def test_multiple_saved_ai_keys_switch_and_delete(self):
+        with self.app_server() as (server, _):
+            status, st1 = self.request(server, '/api/ai_keys', {'op': 'add', 'provider': 'openai', 'api_key': 'sk-first-12345678', 'label': 'Work'}, server.token)
+            self.assertEqual(status, 200)
+            status, st2 = self.request(server, '/api/ai_keys', {'op': 'add', 'provider': 'openai', 'api_key': 'sk-second-87654321', 'label': 'Personal'}, server.token)
+            self.assertEqual(status, 200)
+            profiles = st2['ai_key_profiles']['openai']
+            self.assertEqual(len(profiles), 2)
+            self.assertEqual(profiles[0]['label'], 'Work (sk-f…5678)')
+            self.assertEqual(profiles[1]['label'], 'Personal (sk-s…4321)')
+            self.assertNotIn('sk-first-12345678', json.dumps(st2))
+            self.assertEqual(st2['ai_active_keys']['openai'], profiles[1]['id'])
+            self.assertEqual(server.engine.get_ai_key('openai'), 'sk-second-87654321')
+
+            status, st3 = self.request(server, '/api/ai_keys', {'op': 'select', 'provider': 'openai', 'key_id': profiles[0]['id']}, server.token)
+            self.assertEqual(status, 200)
+            self.assertEqual(st3['ai_active_keys']['openai'], profiles[0]['id'])
+            self.assertEqual(server.engine.get_ai_key('openai'), 'sk-first-12345678')
+
+            status, st4 = self.request(server, '/api/ai_keys', {'op': 'delete', 'provider': 'openai', 'key_id': profiles[0]['id']}, server.token)
+            self.assertEqual(status, 200)
+            self.assertEqual(len(st4['ai_key_profiles']['openai']), 1)
+            self.assertEqual(server.engine.get_ai_key('openai'), 'sk-second-87654321')
+
     def test_no_browser_subprocess_and_startup_timeout(self):
         script = Path(__file__).resolve().parents[1] / 'launcher.py'
         env = dict(os.environ, HOME=str(self.home))
@@ -403,6 +446,102 @@ class ServerTests(Fixture):
             self.assertRegex(url, r'^http://127.0.0.1:\d+$')
             _, err = proc.communicate(timeout=5)
             self.assertEqual(proc.returncode, 0, err)
+
+
+class AiMaintainTests(Fixture):
+    def test_ai_maintain_merges_partial_updates_without_schema_error(self):
+        import launcher as mod
+        root = self.home / 'ai-root'
+        (root / 'ui' / 'icons').mkdir(parents=True)
+        (root / 'ui' / 'shots').mkdir(parents=True)
+        (root / 'tests').mkdir(parents=True)
+        (root / 'tests' / 'test_noop.py').write_text('import unittest\nclass T(unittest.TestCase):\n    def test_ok(self): pass\n')
+        atomic_json(root / 'catalog.json', {
+            'version': 1,
+            'apps': [{
+                'id': 'sample',
+                'name': 'Sample',
+                'publisher': 'Example',
+                'category': 'Tools',
+                'tagline': 'A sample app',
+                'accent': '#7aa2f7',
+                'website': 'https://example.com',
+                'source': {'type': 'arch_repo', 'package': 'sample'},
+                'install': {'type': 'pacman', 'package': 'sample', 'launch': 'sample'},
+                'hidden': False,
+            }],
+        })
+        atomic_json(root / 'catalog.windows.json', {'version': 1, 'apps': []})
+        engine = Engine(root / 'catalog.json', home=self.home, api_base='http://127.0.0.1:0')
+        engine.state.setdefault('secrets', {}).setdefault('ai_keys', {})['openai'] = 'sk-test'
+        engine.fetch_ai_models = lambda *a, **kw: []
+        engine.call_ai_provider = lambda *a, **kw: {
+            'summary': 'Updated sample',
+            'linux_updates': [{
+                'id': 'sample',
+                'name': 'Sample Updated',
+                'has_icon': False,
+                'source': {'type': 'aur', 'package': 'sample-bin'},
+                'install': {'type': 'aur', 'package': 'sample-bin', 'launch': 'sample'},
+            }],
+            'win_updates': [],
+            'remove_ids': [],
+            'assets': [],
+        }
+        old_root = mod.ROOT
+        mod.ROOT = root
+        try:
+            engine.ai_maintain(prompt='', model='gpt-4.1-mini', provider='openai')
+            deadline = time.time() + 5
+            while engine.ai_running and time.time() < deadline:
+                time.sleep(0.05)
+        finally:
+            mod.ROOT = old_root
+        self.assertFalse(engine.ai_running)
+        self.assertIn('AI summary: Updated sample', engine.ai_report)
+        self.assertNotIn('Error:', engine.ai_report)
+        updated = json.loads((root / 'catalog.json').read_text())
+        self.assertEqual(updated['apps'][0]['name'], 'Sample Updated')
+        self.assertEqual(updated['apps'][0]['publisher'], 'Example')
+        self.assertEqual(updated['apps'][0]['install']['type'], 'aur')
+
+    def test_source_build_requires_allow_build_and_scales_cpu_estimate(self):
+        import launcher as mod
+        root = self.home / 'build-root'
+        (root / 'ui' / 'icons').mkdir(parents=True)
+        (root / 'ui' / 'shots').mkdir(parents=True)
+        atomic_json(root / 'catalog.json', {
+            'version': 1,
+            'apps': [{
+                'id': 'lemon-studio',
+                'name': 'Lemon Studio',
+                'publisher': 'ItsAlphaNeon',
+                'category': 'Audio',
+                'tagline': 'DAW',
+                'accent': '#eab308',
+                'website': 'https://getlemonstudio.app',
+                'source': {'type': 'aur', 'package': 'lemon-studio-git'},
+                'install': {'type': 'aur', 'package': 'lemon-studio-git', 'launch': 'lemonstudio'},
+                'hidden': False,
+            }],
+        })
+        atomic_json(root / 'ui' / 'details.json', {
+            'lemon-studio': {'build_info': {'from_source': True, 'estimated_gb': 3.5, 'base_minutes_8core': 12}}
+        })
+        old_root = mod.ROOT
+        mod.ROOT = root
+        try:
+            engine = Engine(root / 'catalog.json', home=self.home, api_base='http://127.0.0.1:0')
+            snap = engine.snapshot()
+            self.assertIn('cpu', snap)
+            bi = snap['apps'][0]['build_info']
+            self.assertTrue(bi['from_source'])
+            self.assertEqual(bi['estimated_gb'], 3.5)
+            self.assertGreaterEqual(bi['estimated_minutes'], 1)
+            with self.assertRaisesRegex(ValueError, 'confirm BUILD'):
+                engine.install_many(['lemon-studio'], allow_build=False)
+        finally:
+            mod.ROOT = old_root
 
 
 if __name__ == '__main__':

@@ -235,7 +235,7 @@ function statusBadge(a) {
   if (pending === 'install') return `<span class="status-pill is-busy">${a.update ? 'Updating…' : 'Starting…'}</span>`;
   if (pending === 'uninstall') return '<span class="status-pill is-busy">Uninstalling…</span>';
   const job = a.job;
-  if (job && !terminal.includes(job.status) && state.busy) {
+  if (job && !terminal.includes(job.status)) {
     return `<span class="status-pill is-busy">${escapeHTML(job.status)}</span>`;
   }
   if (job?.status === 'Error') return '<span class="status-pill is-error">ERROR · RETRY</span>';
@@ -244,6 +244,7 @@ function statusBadge(a) {
   if (a.update) return '<span class="status-pill is-update">UPDATE AVAILABLE</span>';
   if (a.installed) return '<span class="status-pill is-installed">INSTALLED</span>';
   if (a.hidden) return '<span class="status-pill is-hidden">HIDDEN</span>';
+  if (a.build_info?.from_source) return '<span class="status-pill is-build">REQUIRES BUILD</span>';
   return '<span class="status-pill is-available">AVAILABLE TO INSTALL</span>';
 }
 function action(a) {
@@ -262,16 +263,17 @@ function action(a) {
   if (pending === 'uninstall') {
     return '<button class="action" disabled>UNINSTALLING…</button>';
   }
-  if (job && !terminal.includes(job.status) && state.busy) {
+  if (job && !terminal.includes(job.status)) {
     const percent = typeof job.percent === 'number' ? Math.max(0, Math.min(100, job.percent)) : null;
     return `<div class="progress-group"><div class="progress-info"><div class="progress-text"><span>${escapeHTML(job.status)}</span><span>${percent === null ? '' : Math.round(percent) + '%'}</span></div><div class="progress-track" role="progressbar" aria-label="${escapeHTML(job.status)}" ${percent === null ? '' : 'aria-valuenow="' + percent + '"'} aria-valuemin="0" aria-valuemax="100"><div class="progress-fill ${percent === null ? 'indeterminate' : ''}" ${percent === null ? '' : 'style="width:' + percent + '%"'}></div></div></div><button class="cancel" data-action="cancel" title="Cancel pending work; active package transactions finish safely">Cancel</button></div>`;
   }
   if (a.compatible === false && !a.installed) {
     return '<button class="action is-incompatible" disabled>INSTALL</button>';
   }
-  const op = a.installed && !a.update ? 'open' : 'install';
-  const cls = a.update ? 'is-update primary' : a.installed ? 'is-open' : 'is-install';
-  const label = a.update ? 'UPDATE ' + a.latest : a.installed ? 'OPEN ↗' : 'INSTALL';
+  const isBuild = !a.installed && !!a.build_info?.from_source;
+  const op = a.installed && !a.update ? 'open' : isBuild ? 'build' : 'install';
+  const cls = a.update ? 'is-update primary' : a.installed ? 'is-open' : isBuild ? 'is-build' : 'is-install';
+  const label = a.update ? 'UPDATE ' + a.latest : a.installed ? 'OPEN ↗' : isBuild ? 'BUILD' : 'INSTALL';
   return `<button class="action ${cls}" data-action="${op}" ${state.refreshing && op !== 'open' ? 'disabled' : ''}>${escapeHTML(label)}</button>`;
 }
 function menu(a) {
@@ -330,7 +332,8 @@ function renderApps() {
     const released = formatReleased(a);
     const releasedLine = released ? `<span class="last-updated">Last updated: ${escapeHTML(released)}</span>` : '';
     const tagline = `<p class="tagline">${escapeHTML(a.tagline)}</p>`;
-    const cardState = [a.installed ? 'is-installed' : 'is-not-installed', meta.accent2 ? 'has-duo-fade' : ''].filter(Boolean).join(' ');
+    const isDownloading = !!(a.job && !terminal.includes(a.job.status));
+    const cardState = [a.installed ? 'is-installed' : 'is-not-installed', meta.accent2 ? 'has-duo-fade' : '', isDownloading ? 'is-downloading' : ''].filter(Boolean).join(' ');
     const content = view === 'list'
       ? `<div class="card-inner">${appIdentity(a, true)}<div class="status-cell">${statusBadge(a)}</div><div class="category-cell">${badge}<span class="publisher">${escapeHTML(released || a.publisher)}</span></div>${versions(a)}<div class="list-action">${action(a)}</div>${menu(a)}</div>`
       : `<div class="card-inner"><div class="app-top">${appIdentity(a, false).replace(/^<div class="app-top">|<\/div>$/g,'')}${menu(a)}</div>${tagline}${releasedLine}<div class="app-meta">${badge}${versions(a)}</div></div><div class="card-bottom">${statusBadge(a)}${action(a)}</div>`;
@@ -346,6 +349,40 @@ function renderApps() {
   }
   container.innerHTML = html;
   $('#empty').hidden = apps.length !== 0;
+}
+function updateAppCard(a) {
+  const card = $(`.card[data-id="${CSS.escape(a.id)}"]`, $('#apps'));
+  if (!card) return;
+  const active = !!(a.job && !terminal.includes(a.job.status));
+  card.classList.toggle('is-downloading', active);
+  const statusEl = $('.status-cell', card);
+  if (statusEl) {
+    statusEl.innerHTML = statusBadge(a);
+  } else {
+    const pill = $('.card-bottom .status-pill', card);
+    if (pill) pill.outerHTML = statusBadge(a);
+  }
+  const job = a.job;
+  const existingGroup = $('.progress-group', card);
+  if (active && existingGroup && !pendingOps.get(a.id)) {
+    const percent = typeof job.percent === 'number' ? Math.max(0, Math.min(100, job.percent)) : null;
+    const spans = $$('.progress-text span', existingGroup);
+    if (spans[0]) spans[0].textContent = job.status;
+    if (spans[1]) spans[1].textContent = percent === null ? '' : Math.round(percent) + '%';
+    const fill = $('.progress-fill', existingGroup);
+    if (fill) {
+      fill.classList.toggle('indeterminate', percent === null);
+      fill.style.width = percent === null ? '' : percent + '%';
+    }
+    return;
+  }
+  const listAction = $('.list-action', card);
+  if (listAction) {
+    listAction.innerHTML = action(a);
+  } else {
+    const bottom = $('.card-bottom', card);
+    if (bottom) bottom.innerHTML = statusBadge(a) + action(a);
+  }
 }
 function formatCheckedAgo(apps) {
   const latest = apps.reduce((max, a) => Math.max(max, a.release?.checked || 0), 0);
@@ -364,7 +401,10 @@ function render() {
   $('#checked-info').textContent = formatCheckedAgo(state.apps);
   $('#refresh').disabled = state.busy;
   $('#update-all').disabled = state.busy || !updates;
-  $('#refresh-icon').classList.toggle('spinning', !!state.refreshing);
+  const refreshIcon = $('#refresh-icon');
+  if (refreshIcon) refreshIcon.classList.toggle('spinning', !!state.refreshing);
+  const refreshLabel = $('#refresh span');
+  if (refreshLabel) refreshLabel.textContent = state.refreshing ? 'Refreshing…' : 'Refresh';
   $('#warnings').hidden = !state.warnings?.length;
   $('#warnings pre').textContent = (state.warnings || []).join('\n\n');
   if (state.refreshing) setNotice('Refreshing release metadata and package updates…');
@@ -372,7 +412,11 @@ function render() {
   else if (state.busy) setNotice('Working — keep this window open to follow progress.');
   else setNotice(state.notice || 'Ready. Refresh to check the latest releases.', !!state.last_error);
   const aiLog = $('#ai-log');
-  if (aiLog && state.ai_report) aiLog.textContent = state.ai_report;
+  if (aiLog && state.ai_report) {
+    const atBottom = aiLog.scrollHeight - aiLog.scrollTop - aiLog.clientHeight < 24;
+    aiLog.textContent = state.ai_report;
+    if (state.ai_running || atBottom) aiLog.scrollTop = aiLog.scrollHeight;
+  }
   const aiBtn = $('#ai-maintain');
   if (aiBtn) aiBtn.disabled = !!(state.busy || state.ai_running);
   renderApps();
@@ -384,6 +428,7 @@ function showModal(title, content, wide = false) {
   else $('#modal-body').append(content);
   $('#modal').classList.toggle('add-modal', !!$('#add-form'));
   $('#modal').classList.toggle('details-modal', !!wide);
+  $('#modal').classList.toggle('ai-modal', !!$('#ai-form'));
   if (!$('#modal').open) $('#modal').showModal();
 }
 function details(a) {
@@ -496,6 +541,36 @@ function confirmCleanUninstall(a) {
     await runAppOp(a.id, 'uninstall', () => api('uninstall', {id:a.id, clean:true}));
   };
 }
+function confirmBuild(a) {
+  const bi = a.build_info || {};
+  const estGb = bi.estimated_gb ?? 2.5;
+  const estMins = bi.estimated_minutes ?? 10;
+  const cpu = state.cpu || {};
+  const cpuLabel = cpu.model ? `${cpu.model} (${cpu.cores || '?'} cores)` : `${cpu.cores || '?'} CPU cores`;
+  let step = 0;
+  const labels = ['Yes, build from source (1/3)', 'Yes — are you sure? (2/3)', 'Yes — start building now (3/3)'];
+  showModal(
+    'Build ' + a.name + ' from source?',
+    `<p class="muted">No pre-built binary is available for <strong>${escapeHTML(a.name)}</strong>, so it must be compiled from source.</p>` +
+    `<div class="clean-paths">` +
+    `<div><strong>Estimated temporary disk space:</strong> ~${escapeHTML(String(estGb))} GB during build</div>` +
+    `<div><strong>Cleanup:</strong> Build cache and intermediate build files are removed automatically by default after building, leaving only the built, lean file/package.</div>` +
+    `<div><strong>Estimated build time:</strong> ~${escapeHTML(String(estMins))} min on your CPU (${escapeHTML(cpuLabel)})</div>` +
+    `</div>` +
+    `<p class="text-danger" style="font-size:12px;margin:12px 0 0">Press <strong>Yes</strong> 3 times to confirm compiling from source.</p>` +
+    `<div class="modal-actions"><button id="build-cancel">Cancel</button><button id="build-confirm" class="danger-btn">${labels[0]}</button></div>`
+  );
+  $('#build-cancel').onclick = () => $('#modal').close();
+  $('#build-confirm').onclick = async () => {
+    step += 1;
+    if (step < 3) {
+      $('#build-confirm').textContent = labels[step];
+      return;
+    }
+    $('#modal').close();
+    await runAppOp(a.id, 'install', () => api('install', {ids: [a.id], allow_build: true}));
+  };
+}
 function addApp() {
   showModal('Add an app', $('#add-template').content.cloneNode(true));
   const form = $('#add-form');
@@ -569,6 +644,7 @@ $('#apps').addEventListener('click', async event => {
   if (op === 'details') return details(a);
   if (op === 'uninstall') return confirmUninstall(a);
   if (op === 'clean-uninstall') return confirmCleanUninstall(a);
+  if (op === 'build') return confirmBuild(a);
   if (op === 'hide') {
     const prevHidden = a.hidden;
     a.hidden = !prevHidden;
@@ -695,9 +771,11 @@ $('#lightbox').addEventListener('click', event => {
 });
 $('#refresh').onclick = async () => {
   const btn = $('#refresh');
-  const prevText = btn.textContent;
+  const label = $('span', btn);
+  const prevText = label ? label.textContent : 'Refresh';
   btn.disabled = true;
-  btn.textContent = '↻ Refreshing…';
+  if (label) label.textContent = 'Refreshing…';
+  $('#refresh-icon')?.classList.add('spinning');
   try {
     await api('refresh');
   } catch (e) {
@@ -705,40 +783,98 @@ $('#refresh').onclick = async () => {
   } finally {
     if (!state.refreshing) {
       btn.disabled = false;
-      btn.textContent = prevText;
+      if (label) label.textContent = prevText;
+      $('#refresh-icon')?.classList.remove('spinning');
     }
   }
 };
+function loadAiPrefs() {
+  let local = {};
+  try { local = JSON.parse(localStorage.getItem('launchcraft-ai-prefs') || '{}') || {}; } catch {}
+  const sp = state.prefs || {};
+  return {
+    ai_provider: sp.ai_provider || local.ai_provider || 'openai',
+    ai_base_url: sp.ai_base_url ?? local.ai_base_url ?? '',
+    ai_selected_models: {...(local.ai_selected_models || {}), ...(sp.ai_selected_models || {})},
+  };
+}
+function persistAiPrefs(patch) {
+  const cur = loadAiPrefs();
+  const next = {
+    ai_provider: patch.ai_provider ?? cur.ai_provider,
+    ai_base_url: patch.ai_base_url ?? cur.ai_base_url,
+    ai_selected_models: {...cur.ai_selected_models, ...(patch.ai_selected_models || {})},
+  };
+  try { localStorage.setItem('launchcraft-ai-prefs', JSON.stringify(next)); } catch {}
+  state.prefs = {...(state.prefs || {}), ...next};
+  savePref(next);
+}
 function openAiMaintain() {
   const defaults = {
-    openai: {models: ['gpt-4o-mini', 'gpt-4o', 'o4-mini', 'gpt-4.1-mini', 'gpt-4.1'], placeholder: 'sk-...'},
+    openai: {models: ['gpt-4.1-mini', 'gpt-4.1', 'gpt-4o-mini', 'gpt-4o', 'o4-mini'], placeholder: 'sk-...'},
     anthropic: {models: ['claude-3-5-haiku-latest', 'claude-sonnet-4-20250514', 'claude-3-7-sonnet-latest'], placeholder: 'sk-ant-...'},
     gemini: {models: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'], placeholder: 'AIza...'},
     openrouter: {models: ['openai/gpt-4o-mini', 'anthropic/claude-3.5-sonnet', 'google/gemini-2.5-flash'], placeholder: 'sk-or-...'},
     custom: {models: ['llama3.2', 'qwen2.5', 'mistral'], placeholder: 'Optional for local (e.g. Ollama)'},
   };
-  showModal('AI Maintain (Hybrid)', `<p class="muted" style="margin:0 0 14px">Python gathers live GitHub/AUR release facts and checks local icons/screenshots, then your chosen AI proposes validated updates.</p><form id="ai-form" class="form-grid"><label>AI Provider<select name="provider"><option value="openai">OpenAI (ChatGPT)</option><option value="anthropic">Anthropic (Claude)</option><option value="gemini">Google Gemini</option><option value="openrouter">OpenRouter</option><option value="custom">Custom / Local (Ollama, etc.)</option></select></label><label>Model <span class="field-hint" id="ai-model-hint">(auto-updates)</span><select name="model_select"></select></label><label class="full" id="ai-custom-model-wrap" hidden>Custom Model Name<input name="model_custom" placeholder="Enter exact model ID"></label><label class="full" id="ai-base-wrap" hidden>Base URL <span class="field-hint">(e.g. http://localhost:11434/v1)</span><input name="base_url" placeholder="http://localhost:11434/v1"></label><label class="full">API Key <span class="field-hint" id="ai-key-hint"></span><input name="api_key" type="password" placeholder="sk-..."></label><label class="full">App to add or check <span class="field-hint">(optional)</span><input name="prompt" placeholder="Leave blank for full catalog audit, or e.g. Zed"></label><div class="modal-actions full"><button type="button" id="ai-refresh-models">Refresh Models</button><button type="button" id="ai-cancel">Close</button><button type="submit" class="primary">Run AI Maintain</button></div></form><pre id="ai-log" class="release-notes" style="margin-top:14px">${escapeHTML(state.ai_report || 'Ready.')}</pre>`);
+  showModal('AI Maintain (Hybrid)', `<p class="muted" style="margin:0 0 14px">Python gathers live GitHub/AUR release facts and checks local icons/screenshots, then your chosen AI proposes validated updates.</p><form id="ai-form" class="form-grid"><label><span class="field-label">AI Provider</span><select name="provider"><option value="openai">OpenAI (ChatGPT)</option><option value="anthropic">Anthropic (Claude)</option><option value="gemini">Google Gemini</option><option value="openrouter">OpenRouter</option><option value="custom">Custom / Local (Ollama, etc.)</option></select></label><label><span class="field-label">Model <span class="field-hint" id="ai-model-hint">(auto-updates)</span></span><select name="model_select"></select></label><label class="full" id="ai-custom-model-wrap" hidden><span class="field-label">Custom Model Name</span><input name="model_custom" placeholder="Enter exact model ID"></label><label class="full" id="ai-base-wrap" hidden><span class="field-label">Base URL <span class="field-hint">(e.g. http://localhost:11434/v1)</span></span><input name="base_url" placeholder="http://localhost:11434/v1"></label><label class="full"><span class="field-label">API Key <span class="field-hint" id="ai-key-hint"></span></span><div class="ai-key-row"><select name="key_select"></select><button type="button" id="ai-key-delete" title="Remove selected saved key">Remove</button></div></label><div class="full ai-new-key-grid" id="ai-new-key-wrap" hidden><label><span class="field-label">New API Key</span><input name="api_key" type="password" placeholder="sk-..."></label><label><span class="field-label">Label <span class="field-hint">(optional)</span></span><div class="ai-key-row"><input name="key_label" placeholder="e.g. Work, Personal"><button type="button" id="ai-key-save">Save Key</button></div></label></div><label class="full"><span class="field-label">App to add or check <span class="field-hint">(optional)</span></span><input name="prompt" placeholder="Leave blank for full catalog audit, or e.g. Zed"></label><div class="modal-actions full"><button type="button" id="ai-refresh-models">Refresh Models</button><button type="button" id="ai-cancel">Close</button><button type="submit" class="primary">Run AI Maintain</button></div></form><pre id="ai-log" class="release-notes" style="margin-top:14px">${escapeHTML(state.ai_report || 'Ready.')}</pre>`);
   const form = $('#ai-form');
-  const populateModels = (provider, list) => {
+  const aiPrefs = loadAiPrefs();
+  if (defaults[aiPrefs.ai_provider]) form.elements.provider.value = aiPrefs.ai_provider;
+  if (aiPrefs.ai_base_url) form.elements.base_url.value = aiPrefs.ai_base_url;
+  const populateModels = (provider, list, useRemembered = false) => {
     const sel = form.elements.model_select;
-    const prev = sel.value;
+    const remembered = loadAiPrefs().ai_selected_models?.[provider] || '';
+    const prev = useRemembered ? remembered : (sel.value || remembered);
     const items = (Array.isArray(list) && list.length) ? list : (defaults[provider]?.models || ['gpt-4o-mini']);
     sel.innerHTML = items.map(m => `<option value="${escapeHTML(m)}">${escapeHTML(m)}</option>`).join('') + '<option value="__custom__">Custom model…</option>';
-    if (prev && items.includes(prev)) sel.value = prev;
-    $('#ai-custom-model-wrap').hidden = sel.value !== '__custom__';
-    form.elements.model_custom.required = sel.value === '__custom__';
+    if (prev && items.includes(prev)) {
+      sel.value = prev;
+    } else if (prev && prev !== '__custom__' && (useRemembered || sel.value === '__custom__')) {
+      sel.value = '__custom__';
+      form.elements.model_custom.value = prev;
+    }
+    const isCustom = sel.value === '__custom__';
+    $('#ai-custom-model-wrap').hidden = !isCustom;
+    form.elements.model_custom.required = isCustom;
+  };
+  const saveCurrentModel = () => {
+    const p = form.elements.provider.value;
+    const m = form.elements.model_select.value === '__custom__' ? form.elements.model_custom.value.trim() : form.elements.model_select.value;
+    if (m) persistAiPrefs({ai_provider: p, ai_selected_models: {[p]: m}});
+  };
+  const populateKeys = (provider) => {
+    const sel = form.elements.key_select;
+    const list = state.ai_key_profiles?.[provider] || [];
+    const activeId = state.ai_active_keys?.[provider] || '';
+    const cfg = defaults[provider] || defaults.openai;
+    sel.innerHTML = list.map(k => `<option value="${escapeHTML(k.id)}">${escapeHTML(k.label)}</option>`).join('') + '<option value="__new__">+ Add new API key…</option>';
+    if (activeId && list.some(k => k.id === activeId)) {
+      sel.value = activeId;
+    } else if (list.length) {
+      sel.value = list[0].id;
+    } else {
+      sel.value = '__new__';
+    }
+    const isNew = sel.value === '__new__';
+    $('#ai-new-key-wrap').hidden = !isNew;
+    $('#ai-key-delete').hidden = isNew || !list.length;
+    form.elements.api_key.placeholder = cfg.placeholder;
+    $('#ai-key-hint').textContent = list.length ? `(${list.length} saved locally)` : provider === 'custom' ? '(optional for local endpoints)' : '(stored locally only)';
   };
   const refreshModels = async (silent = true) => {
     const p = form.elements.provider.value;
-    const key = form.elements.api_key.value.trim();
+    const key = form.elements.key_select.value === '__new__' ? form.elements.api_key.value.trim() : '';
+    const keyId = form.elements.key_select.value !== '__new__' ? form.elements.key_select.value : '';
+    const keyLabel = form.elements.key_label.value.trim();
     const base = form.elements.base_url.value.trim();
     if (!silent) $('#ai-model-hint').textContent = '(refreshing…)';
     try {
-      const res = await fetch('/api/ai_models', {method: 'POST', headers: {'Content-Type':'application/json', 'X-LaunchCraft-Token': token}, body: JSON.stringify({provider: p, api_key: key, base_url: base})});
+      const res = await fetch('/api/ai_models', {method: 'POST', headers: {'Content-Type':'application/json', 'X-LaunchCraft-Token': token}, body: JSON.stringify({provider: p, api_key: key, key_id: keyId, key_label: keyLabel, base_url: base})});
       const data = await res.json();
       if (res.ok && data.models?.length) {
         state.ai_models = data.ai_models || state.ai_models;
-        populateModels(p, data.models);
+        populateModels(p, data.models, false);
         $('#ai-model-hint').textContent = `(${data.models.length} live)`;
       } else if (!silent) {
         $('#ai-model-hint').textContent = '(using defaults)';
@@ -749,21 +885,67 @@ function openAiMaintain() {
   };
   const syncProvider = () => {
     const p = form.elements.provider.value;
-    const cfg = defaults[p] || defaults.openai;
     const saved = !!(state.ai_keys && state.ai_keys[p]);
-    populateModels(p, state.ai_models?.[p]);
-    form.elements.api_key.placeholder = saved ? '•••••••• (saved locally)' : cfg.placeholder;
-    $('#ai-key-hint').textContent = saved ? '(saved locally — enter a new one to replace)' : p === 'custom' ? '(optional for local endpoints)' : '(stored locally only)';
+    populateModels(p, state.ai_models?.[p], true);
+    populateKeys(p);
     $('#ai-base-wrap').hidden = p !== 'custom';
     $('#ai-model-hint').textContent = state.ai_models?.[p]?.length ? `(${state.ai_models[p].length} cached)` : '(defaults)';
     if (saved || p === 'custom') refreshModels(true);
   };
-  form.elements.provider.onchange = syncProvider;
+  form.elements.key_select.onchange = async () => {
+    const p = form.elements.provider.value;
+    const val = form.elements.key_select.value;
+    const isNew = val === '__new__';
+    $('#ai-new-key-wrap').hidden = !isNew;
+    $('#ai-key-delete').hidden = isNew || !(state.ai_key_profiles?.[p]?.length);
+    if (!isNew && val) {
+      try {
+        await api('ai_keys', {op: 'select', provider: p, key_id: val});
+        populateKeys(p);
+        refreshModels(true);
+      } catch (err) {
+        setNotice(err.message, true);
+      }
+    }
+  };
+  $('#ai-key-save').onclick = async () => {
+    const p = form.elements.provider.value;
+    const rawKey = form.elements.api_key.value.trim();
+    const label = form.elements.key_label.value.trim();
+    if (!rawKey) return setNotice('Enter an API key to save.', true);
+    try {
+      await api('ai_keys', {op: 'add', provider: p, api_key: rawKey, label});
+      form.elements.api_key.value = '';
+      form.elements.key_label.value = '';
+      populateKeys(p);
+      refreshModels(false);
+    } catch (err) {
+      setNotice(err.message, true);
+    }
+  };
+  $('#ai-key-delete').onclick = async () => {
+    const p = form.elements.provider.value;
+    const kid = form.elements.key_select.value;
+    if (!kid || kid === '__new__') return;
+    try {
+      await api('ai_keys', {op: 'delete', provider: p, key_id: kid});
+      populateKeys(p);
+    } catch (err) {
+      setNotice(err.message, true);
+    }
+  };
+  form.elements.provider.onchange = () => {
+    persistAiPrefs({ai_provider: form.elements.provider.value});
+    syncProvider();
+  };
   form.elements.model_select.onchange = () => {
     const isCustom = form.elements.model_select.value === '__custom__';
     $('#ai-custom-model-wrap').hidden = !isCustom;
     form.elements.model_custom.required = isCustom;
+    saveCurrentModel();
   };
+  form.elements.model_custom.onchange = saveCurrentModel;
+  form.elements.base_url.onchange = () => persistAiPrefs({ai_base_url: form.elements.base_url.value.trim()});
   $('#ai-refresh-models').onclick = () => refreshModels(false);
   syncProvider();
   $('#ai-cancel').onclick = () => $('#modal').close();
@@ -771,10 +953,25 @@ function openAiMaintain() {
     event.preventDefault();
     const f = Object.fromEntries(new FormData(form));
     const model = f.model_select === '__custom__' ? f.model_custom.trim() : f.model_select;
+    const isNewKey = f.key_select === '__new__';
+    persistAiPrefs({ai_provider: f.provider, ai_base_url: f.base_url || '', ...(model ? {ai_selected_models: {[f.provider]: model}} : {})});
     const btn = $('button[type=submit]', form);
     btn.disabled = true;
     try {
-      await api('ai_maintain', {provider: f.provider, model, base_url: f.base_url || '', api_key: f.api_key || '', prompt: f.prompt || ''}, {timeoutMs: 60000});
+      await api('ai_maintain', {
+        provider: f.provider,
+        model,
+        base_url: f.base_url || '',
+        api_key: isNewKey ? (f.api_key || '') : '',
+        key_label: isNewKey ? (f.key_label || '') : '',
+        key_id: isNewKey ? '' : (f.key_select || ''),
+        prompt: f.prompt || '',
+      }, {timeoutMs: 60000});
+      if (isNewKey && f.api_key?.trim()) {
+        form.elements.api_key.value = '';
+        form.elements.key_label.value = '';
+      }
+      populateKeys(f.provider);
     } catch (error) {
       $('#ai-log').textContent = 'Error: ' + error.message;
     } finally {
@@ -811,7 +1008,11 @@ async function connect() {
     events.addEventListener('progress', event => {
       const job = JSON.parse(event.data);
       const a = state.apps.find(a => a.id === job.id);
-      if (a) {a.job = job; renderApps();}
+      if (a) {
+        a.job = job;
+        if (!terminal.includes(job.status)) state.busy = true;
+        updateAppCard(a);
+      }
     });
     events.addEventListener('error', event => {
       if (event.data) setNotice(JSON.parse(event.data).message, true);

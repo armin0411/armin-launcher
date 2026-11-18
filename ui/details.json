@@ -816,6 +816,11 @@
   },
   "lemon-studio": {
     "about": "A free, open-source pattern-based digital audio workstation written from scratch in Rust with native .flp project compatibility.",
+    "build_info": {
+      "from_source": true,
+      "estimated_gb": 3.5,
+      "base_minutes_8core": 12
+    },
     "features": [
       {
         "title": "Pattern workflow",
