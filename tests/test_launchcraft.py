@@ -543,7 +543,7 @@ class AiMaintainTests(Fixture):
         atomic_json(root / 'catalog.windows.json', {'version': 1, 'apps': []})
         engine = Engine(root / 'catalog.json', home=self.home, api_base='http://127.0.0.1:0')
         engine.state.setdefault('secrets', {}).setdefault('ai_keys', {})['openai'] = 'sk-test'
-        engine.fetch_ai_models = lambda *a, **kw: []
+        engine.enrich_app_assets = lambda *a, **kw: False
         engine.call_ai_provider = lambda *a, **kw: {
             'summary': 'Updated sample',
             'linux_updates': [{
@@ -557,15 +557,14 @@ class AiMaintainTests(Fixture):
             'remove_ids': [],
             'assets': [],
         }
-        old_root = mod.ROOT
-        mod.ROOT = root
-        try:
+        published = threading.Event()
+        def record_update(kind, _data):
+            if kind == 'state':
+                published.set()
+
+        with patch.object(mod, 'ROOT', root), patch.object(engine, 'emit', side_effect=record_update):
             engine.ai_maintain(prompt='', model='gpt-4.1-mini', provider='openai')
-            deadline = time.time() + 5
-            while engine.ai_running and time.time() < deadline:
-                time.sleep(0.05)
-        finally:
-            mod.ROOT = old_root
+            self.assertTrue(published.wait(5), engine.ai_report)
         self.assertFalse(engine.ai_running)
         self.assertIn('AI summary: Updated sample', engine.ai_report)
         self.assertNotIn('Error:', engine.ai_report)

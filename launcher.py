@@ -1049,6 +1049,7 @@ class Engine:
                 sys_prompt = (
                     'You are the interactive AI assistant inside Armin Launcher\'s mini terminal. '
                     'Help the user diagnose app launch failures, inspect logs, and fix issues. '
+                    'Format reply for reading with short Markdown paragraphs, lists, or fenced code blocks where useful. '
                     'Return ONLY valid JSON: {"reply": str, "inspect_commands": [str], "fix_commands": [{"title": str, "cmd": str, "needs_admin": bool}]}. '
                     'Use inspect_commands ONLY if you need read-only diagnostic output first (ls, cat, head, tail, which, ldd, file, ps, ss, df, free, nvidia-smi, systemctl status, journalctl). '
                     'Set needs_admin=true in fix_commands when root/sudo/pacman permissions are needed (the UI will prompt the user for admin via pkexec).'

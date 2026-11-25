@@ -114,7 +114,21 @@ prompt = sys.stdin.read()
 sys.stderr.write('Codex diagnostic output\n' * 5000)
 sys.stderr.flush()
 time.sleep(30 if 'stop this job' in prompt else 1.2)
-print(json.dumps({'reply': 'Launcher check complete.'}))
+reply = (
+    '## Launcher check complete\n\n'
+    'Everything looks **healthy**. Your installed apps are ready.\n\n'
+    '1. Open Blender from the library.\n'
+    '   - Check the version in the app menu.\n'
+    '2. Run the command below for more details.\n\n'
+    '```text\n'
+    'version: 4.5\n'
+    'AI: A prefix inside the code block\n'
+    '    AI: An indented line inside the code block\n'
+    '```\n\n'
+    'See the [Blender manual](https://docs.blender.org/) for more details.\n\n'
+    '<img src=x onerror="window.formattingEscaped=false">'
+)
+print(json.dumps({'reply': reply}))
 """)
         codex.chmod(0o755)
         env = dict(os.environ, HOME=tmp, PATH=f'{home}{os.pathsep}{os.environ["PATH"]}')
@@ -151,9 +165,10 @@ print(json.dumps({'reply': 'Launcher check complete.'}))
                 assert colors == (['rgb(231, 230, 226)', 'rgb(98, 99, 108)', '1'] if theme_id == 'light' else ['rgb(6, 6, 7)', 'rgb(147, 148, 157)', '1']), colors
             cdp.evaluate("applyTheme('catppuccin', false, false); window.smokeState = state; state = {...state, apps: state.apps.map((a,i) => i ? a : {...a, update:true, latest:'v-test'})}; render()")
             assert cdp.evaluate("!document.querySelector('#update-all').disabled")
-            cdp.until("getComputedStyle(document.querySelector('#update-all')).backgroundColor === 'rgb(216, 181, 255)'")
-            assert cdp.evaluate("getComputedStyle(document.querySelector('#update-all')).backgroundColor") == 'rgb(216, 181, 255)'
-            assert cdp.evaluate("getComputedStyle(document.querySelector('#update-all')).color") == 'rgb(255, 255, 255)'
+            cdp.until("""(() => {
+                const colors = getComputedStyle(document.querySelector('#update-all'));
+                return colors.backgroundColor === 'rgb(216, 181, 255)' && colors.color === 'rgb(255, 255, 255)';
+            })()""")
             cdp.evaluate("state = window.smokeState; delete window.smokeState; render()")
             assert cdp.evaluate("document.querySelectorAll('.card').length") == len([a for a in initial['apps'] if not a['hidden']])
             cdp.evaluate("document.querySelector('#search').value='no-such-application'; document.querySelector('#search').dispatchEvent(new Event('input'))")
@@ -233,14 +248,49 @@ print(json.dumps({'reply': 'Launcher check complete.'}))
             assert cdp.evaluate("document.querySelector('[data-filter=installed]').getAttribute('aria-pressed') === 'true'")
             cdp.until("!state.ai_running && state.ai_outcome === 'complete'")
             click('#ai-maintain')
-            assert 'AI: Launcher check complete.' in cdp.evaluate("document.querySelector('#ai-log').textContent")
+            assert cdp.evaluate("""(() => {
+                const message = document.querySelector('.ai-record[data-kind=assistant]');
+                return message.querySelector('h4').textContent === 'Launcher check complete'
+                    && message.querySelector('p strong').textContent === 'healthy'
+                    && message.querySelectorAll('p').length === 3
+                    && message.querySelector('ol > li > ul > li').textContent === 'Check the version in the app menu.'
+                    && message.querySelector('pre code').textContent.includes('\\n    AI: An indented line')
+                    && message.querySelector('pre code').textContent.includes('\\nAI: A prefix inside')
+                    && message.querySelector('a').href === 'https://docs.blender.org/'
+                    && message.textContent.includes('<img src=x')
+                    && !message.querySelector('img');
+            })()"""), 'Markdown transcript formatting'
             screenshot = cdp.call('Page.captureScreenshot', dict(format='png', captureBeyondViewport=False))
             (output / 'ai.png').write_bytes(base64.b64decode(screenshot['data']))
             cdp.evaluate("document.querySelector('#ai-input').value='stop this job'; document.querySelector('#ai-input').dispatchEvent(new Event('input'))")
             click('#ai-send')
             cdp.until("document.querySelector('#ai-status').textContent.includes('Waiting')")
+            assert cdp.evaluate("""(async () => {
+                const spinner = document.querySelector('.ai-spinner');
+                const frame = () => getComputedStyle(spinner, '::before').content;
+                const first = frame();
+                await new Promise(resolve => setTimeout(resolve, 230));
+                return !document.querySelector('#ai-working').hidden && frame() !== first;
+            })()"""), 'AI working animation'
+            screenshot = cdp.call('Page.captureScreenshot', dict(format='png', captureBeyondViewport=False))
+            (output / 'ai-working.png').write_bytes(base64.b64decode(screenshot['data']))
+            cdp.call('Emulation.setEmulatedMedia', dict(features=[dict(name='prefers-reduced-motion', value='reduce')]))
+            assert cdp.evaluate("getComputedStyle(document.querySelector('.ai-spinner'), '::before').animationName === 'none'")
+            cdp.call('Emulation.setEmulatedMedia', dict(features=[]))
             click('#ai-stop')
             cdp.until("!state.ai_running && state.ai_outcome === 'cancelled'")
+            assert cdp.evaluate("document.querySelector('#ai-working').hidden")
+            command = r"!printf '\033[32m%s\033[0m\n    \033[38;2;255;120;90m%s\033[0m\n' healthy indented"
+            cdp.evaluate(f"document.querySelector('#ai-input').value={json.dumps(command)}; document.querySelector('#ai-input').dispatchEvent(new Event('input'))")
+            click('#ai-send')
+            cdp.until("!state.ai_running && state.ai_outcome === 'complete' && !!document.querySelector('.ai-record[data-kind=terminal] pre span')")
+            assert cdp.evaluate("""(() => {
+                const output = document.querySelector('.ai-record[data-kind=terminal] pre');
+                const [green, rgb] = output.querySelectorAll('span');
+                return output.textContent === 'healthy\\n    indented' &&
+                    getComputedStyle(green).color === 'rgb(135, 207, 171)' &&
+                    getComputedStyle(rgb).color === 'rgb(255, 120, 90)';
+            })()"""), 'Terminal ANSI color and indentation'
             click('[data-ai-mode=maintain]')
             assert cdp.evaluate("!document.querySelector('#ai-send').disabled && document.querySelector('#ai-input').value === ''")
             click('#ai-hide')

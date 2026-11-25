@@ -808,6 +808,246 @@ $('#refresh').onclick = async () => {
   }
 };
 
+const renderAiTranscript = (() => {
+  const recordStart = /^(You:|AI:|AI summary:|\$|Error:)(?: |$)/;
+  const fenceStart = /^ {0,3}(\x60{3,}|~{3,})\s*([\w+#.-]*)\s*$/;
+  const listItem = /^([ \t]*)([-+*]|\d{1,9}[.)])[ \t]+(.*)$/;
+  const heading = /^ {0,3}(#{1,6})[ \t]+(.+)$/;
+  const quote = /^ {0,3}> ?(.*)$/;
+  const csi = /\x1b\[[0-?]*[ -/]*[@-~]/g;
+  const labels = {
+    'You:': ['user', 'You'],
+    'AI:': ['assistant', 'AI'],
+    'AI summary:': ['assistant', 'Audit summary'],
+    '$': ['terminal', 'Terminal'],
+    'Error:': ['error', 'Error'],
+  };
+
+  function element(tag, parent, text) {
+    const node = document.createElement(tag);
+    if (text !== undefined) node.textContent = text;
+    parent.append(node);
+    return node;
+  }
+
+  function closesFence(line, marker) {
+    const trimmed = line.trim();
+    return trimmed.length >= marker.length && [...trimmed].every(char => char === marker[0]);
+  }
+
+  function splitRecords(report) {
+    const records = [];
+    let record = {kind: 'status', lines: []};
+    let fence = '';
+    for (let line of report.split('\n')) {
+      const start = !fence && line.match(recordStart);
+      if (start || (!fence && line === 'Cancelled by user.')) {
+        if (record.lines.length || record.command) records.push(record);
+        const [kind, label] = start ? labels[start[1]] : ['status', 'Stopped'];
+        if (start) line = line.slice(start[0].length);
+        record = {kind, label, lines: []};
+        if (kind === 'terminal') {
+          record.command = '$ ' + line;
+          continue;
+        }
+      }
+      record.lines.push(line);
+      if (record.kind === 'assistant') {
+        if (fence && closesFence(line, fence)) fence = '';
+        else if (!fence) fence = line.match(fenceStart)?.[1] || '';
+      }
+    }
+    if (record.lines.length || record.command) records.push(record);
+    return records;
+  }
+
+  function renderInline(parent, text) {
+    if (text.includes('\x1b[')) {
+      renderAnsi(parent, text);
+      return;
+    }
+    const inline = /\x60([^\x60\n]+)\x60|\*\*([^*\n]+)\*\*|__([^_\n]+)__|\*([^*\n]+)\*|\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g;
+    let end = 0;
+    for (const match of text.matchAll(inline)) {
+      parent.append(text.slice(end, match.index));
+      const [, code, bold, boldAlt, italic, label, href] = match;
+      if (code) element('code', parent, code);
+      else if (bold || boldAlt) renderInline(element('strong', parent), bold || boldAlt);
+      else if (italic) renderInline(element('em', parent), italic);
+      else {
+        const link = element('a', parent, label);
+        link.href = href;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+      }
+      end = match.index + match[0].length;
+    }
+    parent.append(text.slice(end));
+  }
+
+  function indentation(whitespace) {
+    return whitespace.replaceAll('\t', '    ').length;
+  }
+
+  function renderList(parent, lines, start) {
+    const levels = [];
+    let i = start;
+    for (; i < lines.length; i++) {
+      const match = lines[i].match(listItem);
+      if (!match) {
+        const last = levels.at(-1);
+        const spaces = lines[i].match(/^[ \t]*/)[0];
+        const text = lines[i].slice(spaces.length);
+        const indent = indentation(spaces);
+        if (!text || indent <= last.indent) break;
+        renderInline(last.item, '\n' + ' '.repeat(Math.max(0, indent - last.indent - 2)) + text);
+        continue;
+      }
+      const [, spaces, marker, text] = match;
+      const indent = indentation(spaces);
+      const ordered = /^\d/.test(marker);
+      while (levels.length && levels.at(-1).indent > indent) levels.pop();
+      if (levels.at(-1)?.indent === indent && levels.at(-1).ordered !== ordered) levels.pop();
+      if (!levels.length || levels.at(-1).indent < indent) {
+        const list = element(ordered ? 'ol' : 'ul', levels.at(-1)?.item || parent);
+        if (ordered) list.start = Number.parseInt(marker, 10);
+        levels.push({indent, ordered, list});
+      }
+      const level = levels.at(-1);
+      level.item = element('li', level.list);
+      renderInline(level.item, text);
+    }
+    return i;
+  }
+
+  function renderMarkdown(parent, lines) {
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      const fence = line.match(fenceStart);
+      const title = line.match(heading);
+      if (!line.trim()) {
+        i++;
+      } else if (fence) {
+        const [, marker, language] = fence;
+        const code = [];
+        i++;
+        while (i < lines.length && !closesFence(lines[i], marker)) code.push(lines[i++]);
+        i++;
+        renderCode(parent, code.join('\n'), language);
+      } else if (title) {
+        renderInline(element(title[1].length === 1 ? 'h3' : 'h4', parent), title[2]);
+        i++;
+      } else if (listItem.test(line)) {
+        i = renderList(parent, lines, i);
+      } else if (quote.test(line)) {
+        const quoted = [];
+        while (i < lines.length && quote.test(lines[i])) quoted.push(lines[i++].match(quote)[1]);
+        renderInline(element('blockquote', parent), quoted.join('\n'));
+      } else {
+        const paragraph = [line];
+        i++;
+        while (i < lines.length && lines[i].trim() && ![fenceStart, heading, listItem, quote].some(pattern => pattern.test(lines[i]))) {
+          paragraph.push(lines[i++]);
+        }
+        renderInline(element('p', parent), paragraph.join('\n'));
+      }
+    }
+  }
+
+  function ansiColor(n) {
+    if (!Number.isInteger(n) || n < 0 || n > 255) return '';
+    if (n < 16) return 'var(--ai-ansi-' + n + ')';
+    if (n >= 232) {
+      const shade = 8 + (n - 232) * 10;
+      return 'rgb(' + [shade, shade, shade].join(',') + ')';
+    }
+    const levels = [0, 95, 135, 175, 215, 255];
+    const cube = n - 16;
+    return 'rgb(' + [levels[Math.floor(cube / 36)], levels[Math.floor(cube / 6) % 6], levels[cube % 6]].join(',') + ')';
+  }
+
+  function applyAnsi(codes, style) {
+    for (let i = 0; i < codes.length; i++) {
+      const n = codes[i];
+      if (n === 0) style = {};
+      else if (n === 1) style.fontWeight = '700';
+      else if (n === 2) style.opacity = '.72';
+      else if (n === 3 || n === 23) style.fontStyle = n === 3 ? 'italic' : '';
+      else if (n === 4 || n === 24) style.textDecoration = n === 4 ? 'underline' : '';
+      else if (n === 22) Object.assign(style, {fontWeight: '', opacity: ''});
+      else if (n === 39) style.color = '';
+      else if (n === 49) style.backgroundColor = '';
+      else if (n === 38 || n === 48) {
+        const field = n === 38 ? 'color' : 'backgroundColor';
+        const mode = codes[++i];
+        if (mode === 5) style[field] = ansiColor(codes[++i]);
+        else if (mode === 2) {
+          const rgb = codes.slice(i + 1, i + 4);
+          if (rgb.length === 3 && rgb.every(channel => Number.isInteger(channel) && channel >= 0 && channel <= 255)) {
+            style[field] = 'rgb(' + rgb.join(',') + ')';
+          }
+          i += 3;
+        }
+      } else if (n >= 30 && n <= 37) style.color = ansiColor(n - 30);
+      else if (n >= 40 && n <= 47) style.backgroundColor = ansiColor(n - 40);
+      else if (n >= 90 && n <= 97) style.color = ansiColor(n - 82);
+      else if (n >= 100 && n <= 107) style.backgroundColor = ansiColor(n - 92);
+    }
+    return style;
+  }
+
+  function renderAnsi(parent, text) {
+    let end = 0;
+    let style = {};
+    const append = fragment => {
+      if (!fragment) return;
+      if (Object.values(style).some(Boolean)) Object.assign(element('span', parent, fragment).style, style);
+      else parent.append(fragment);
+    };
+    for (const match of text.matchAll(csi)) {
+      append(text.slice(end, match.index));
+      const parameters = match[0].slice(2, -1);
+      if (match[0].endsWith('m') && /^[0-9;]*$/.test(parameters)) {
+        style = applyAnsi(parameters.split(';').map(Number), style);
+      }
+      end = match.index + match[0].length;
+    }
+    append(text.slice(end));
+  }
+
+  function renderCode(parent, text, language) {
+    const block = element('div', parent);
+    block.className = 'ai-code';
+    if (language) element('div', block, language).className = 'ai-code-label';
+    renderAnsi(element('code', element('pre', block)), text);
+  }
+
+  return (container, report) => {
+    const transcript = document.createDocumentFragment();
+    const content = report.replace(/\r\n?/g, '\n')
+      .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\|$)/g, '')
+      .replace(/[\x00-\x08\x0b-\x1a\x1c-\x1f\x7f]/g, '');
+    for (const {kind, label, lines, command} of splitRecords(content)) {
+      const record = element('article', transcript);
+      record.className = 'ai-record';
+      record.dataset.kind = kind;
+      if (label) element('div', record, label).className = 'ai-record-label';
+      const body = element('div', record);
+      body.className = 'ai-record-body';
+      if (kind === 'terminal') {
+        renderAnsi(element('code', body), command);
+        if (lines.length) renderCode(body, lines.join('\n'));
+      } else if (kind === 'assistant') {
+        renderMarkdown(body, lines);
+      } else {
+        renderAnsi(element('p', body), lines.join('\n'));
+      }
+    }
+    container.replaceChildren(transcript);
+  };
+})();
+
 const aiPanel = $('#ai-panel');
 const aiSettings = $('#ai-settings');
 const aiSettingsFields = aiSettings.elements;
@@ -825,6 +1065,7 @@ let aiModels = {};
 let aiSelectedModels = {};
 let aiModelRequest = 0;
 let aiRenderedFixes = '';
+let aiRenderedReport = '';
 
 function setAiError(message = '') {
   const error = $('#ai-error');
@@ -847,15 +1088,20 @@ function renderAi() {
   const statusLabel = $('#ai-status');
   if (statusLabel.textContent !== status) statusLabel.textContent = status;
   statusLabel.dataset.status = running ? 'running' : outcome;
+  const stopping = /^stopping/i.test(status);
+  const working = $('#ai-working');
+  working.hidden = !running || stopping;
+  working.classList.toggle('has-phase', !!state.ai_phase);
   $('#ai-stop').hidden = !running;
-  $('#ai-stop').disabled = aiRequest || /^stopping/i.test(status);
+  $('#ai-stop').disabled = aiRequest || stopping;
   $('#ai-clear').disabled = unavailable || !report;
   $('#ai-send').disabled = unavailable || (aiMode === 'ask' && !aiInput.value.trim());
   $('#ai-empty').hidden = !!report;
   aiLog.hidden = !report;
-  if (aiLog.textContent !== report) {
+  if (aiRenderedReport !== report) {
     const atBottom = aiOutput.scrollHeight - aiOutput.scrollTop - aiOutput.clientHeight < 28;
-    aiLog.textContent = report;
+    renderAiTranscript(aiLog, report);
+    aiRenderedReport = report;
     if (atBottom) aiOutput.scrollTop = aiOutput.scrollHeight;
   }
   if (state.term_cwd) aiInput.title = `Local commands run in ${state.term_cwd}`;

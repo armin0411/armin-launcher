@@ -90,13 +90,16 @@
   </form>
   <section class="ai-activity" aria-label="AI activity">
     <div class="ai-activity-head">
-      <span id="ai-status" role="status">Ready</span>
+      <div class="ai-status-line">
+        <span id="ai-working" aria-hidden="true" hidden><span class="ai-spinner"></span><span class="ai-working-text">Working...</span></span>
+        <span id="ai-status" role="status">Ready</span>
+      </div>
       <button id="ai-clear" type="button" title="Clear activity (Ctrl+L)">Clear</button>
       <button id="ai-stop" type="button" hidden>Stop</button>
     </div>
-    <div id="ai-output">
+    <div id="ai-output" role="region" aria-label="AI transcript" tabindex="0">
       <p id="ai-empty">Ask for help with an app, or switch to Maintain to check the catalog.</p>
-      <pre id="ai-log" tabindex="0" aria-label="AI output" hidden></pre>
+      <div id="ai-log" hidden></div>
     </div>
     <div id="ai-fixes" class="ai-fixes" hidden></div>
   </section>
