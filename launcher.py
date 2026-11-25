@@ -2,6 +2,8 @@
 """LaunchCraft: an on-demand, standard-library-only local application launcher."""
 import argparse
 import copy
+import concurrent.futures
+import contextlib
 import fnmatch
 import hashlib
 import http.server
@@ -15,6 +17,7 @@ import secrets
 import shlex
 import shutil
 import signal
+import ssl
 import subprocess
 import sys
 import tarfile
@@ -146,31 +149,59 @@ class Catalog:
     def load(self):
         return validate_catalog(json.loads(self.path.read_text()))
 
-    def mutate(self, action):
-        # Shared lock used by the HTTP editor and launchcraft-ctl. Never held for downloads.
+    @contextlib.contextmanager
+    def locked(self):
+        # Shared by the HTTP editor, background audits and launchcraft-ctl.
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.with_suffix(self.path.suffix + '.lock').open('a') as lock:
             if fcntl is not None:
                 fcntl.flock(lock, fcntl.LOCK_EX)
             elif msvcrt is not None:
+                lock.seek(0)
                 msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
             try:
-                before = self.path.read_bytes()
-                data = validate_catalog(json.loads(before))
-                action(data)
-                validate_catalog(data)
-                if self.path.read_bytes() != before:
-                    raise ValueError('Catalog changed externally; retry your edit')
-                atomic_json(self.path, data)
-                return data
+                yield
             finally:
                 if msvcrt is not None and fcntl is None:
                     lock.seek(0)
                     msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
 
+    def mutate(self, action):
+        with self.locked():
+            before = self.path.read_bytes()
+            data = validate_catalog(json.loads(before))
+            action(data)
+            validate_catalog(data)
+            if self.path.read_bytes() != before:
+                raise ValueError('Catalog changed externally; retry your edit')
+            atomic_json(self.path, data)
+            return data
+
 
 class Cancelled(Exception):
     pass
+
+
+class RefreshRun:
+    WORKERS = 10
+    TIMEOUT = 8
+    REQUEST_TIMEOUT = 4
+
+    def __init__(self, cancel, http):
+        self.cancel = cancel
+        self.done = threading.Event()
+        self.deadline = time.monotonic() + self.TIMEOUT
+        self.http = http.copy()
+        self.http_updates = {}
+        self.ssl_context = None
+
+    def remaining(self):
+        if self.cancel.is_set() or self.done.is_set():
+            raise Cancelled()
+        remaining = self.deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError('Refresh deadline reached')
+        return remaining
 
 
 class Engine:
@@ -191,7 +222,7 @@ class Engine:
             self.state = json.loads(self.state_path.read_text())
         except (OSError, ValueError):
             self.state = {}
-        for key in ('installed', 'releases', 'http', 'prefs', 'secrets'):
+        for key in ('installed', 'releases', 'release_sources', 'http', 'prefs', 'secrets'):
             self.state.setdefault(key, {})
         self.api_base, self.web_base = api_base.rstrip('/'), web_base.rstrip('/')
         self.gh_token = self._detect_gh_token() if self.api_base == 'https://api.github.com' else ''
@@ -200,7 +231,15 @@ class Engine:
         self.busy = False
         self.refreshing = False
         self.ai_running = False
-        self.ai_report = ''
+        self.catalog_key = hashlib.sha256(str(self.catalog.path).encode()).hexdigest()[:16]
+        self.ai_result_path = self.data / f'ai-result-{self.catalog_key}.json'
+        try:
+            ai_result = json.loads(self.ai_result_path.read_text())
+        except (OSError, ValueError):
+            ai_result = {}
+        self.ai_report = ai_result.get('report', '')
+        self.ai_outcome = ai_result.get('outcome', '')
+        self.ai_phase = ''
         self.ai_cancel = threading.Event()
         self.ai_proc = None
         self.chat_history = []
@@ -208,11 +247,13 @@ class Engine:
         self.pkg_lock = threading.Lock()
         self.active_workers = 0
         self.worker = None
+        self._refresh_context = threading.local()
+        self._refresh_slots = threading.BoundedSemaphore(RefreshRun.WORKERS)
         self.notice = ''
         self.last_error = ''
         self.warnings = []
-        self.term_cwd = str(ROOT)
-        self.pending_fixes = []
+        self.term_cwd = ai_result.get('cwd') or str(self.catalog.path.parent)
+        self.pending_fixes = ai_result.get('fixes', [])
 
     def save(self):
         with self.lock:
@@ -234,38 +275,47 @@ class Engine:
     def command(self, argv, timeout=30):
         try:
             # Refresh helpers must not outlive the final browser connection.
-            if self.refreshing and threading.current_thread() is self.worker:
+            if run := getattr(self._refresh_context, 'run', None):
+                run.remaining()
                 kw = {} if IS_WIN else {'start_new_session': True}
                 process = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, **kw)
                 deadline = time.monotonic() + timeout
+                completed = False
                 try:
                     while True:
-                        if self.cancel.is_set():
-                            raise Cancelled()
-                        if time.monotonic() > deadline:
+                        wait = min(.1, deadline - time.monotonic(), run.remaining())
+                        if wait <= 0:
                             raise subprocess.TimeoutExpired(argv, timeout)
                         try:
-                            stdout, stderr = process.communicate(timeout=.2)
+                            stdout, stderr = process.communicate(timeout=wait)
+                            completed = True
                             return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
                         except subprocess.TimeoutExpired:
                             continue
                 finally:
-                    if process.poll() is None:
-                        if IS_WIN:
-                            process.terminate()
-                        else:
-                            os.killpg(process.pid, signal.SIGTERM)
-                    process.communicate()
+                    if not completed:
+                        try:
+                            if IS_WIN:
+                                process.kill()
+                            else:
+                                os.killpg(process.pid, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+                    process.wait()
+                    process.stdout.close()
+                    process.stderr.close()
             return subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
         except (OSError, subprocess.TimeoutExpired) as e:
             return subprocess.CompletedProcess(argv, 127, '', str(e))
 
-    def installed(self, app):
+    def installed(self, app, pacman_versions=None):
         ins = app['install']
         record = self.state['installed'].get(app['id'], {})
         if ins['type'] in ('pacman_pkg', 'pacman', 'aur'):
             if IS_WIN:
                 return None
+            if pacman_versions is not None:
+                return pacman_versions.get(ins['package'])
             p = self.command(['pacman', '-Q', ins['package']])
             if p.returncode == 0:
                 return p.stdout.strip().split(maxsplit=1)[-1]
@@ -374,10 +424,18 @@ class Engine:
         apps = copy.deepcopy(self.catalog.load()['apps'])
         details = self.load_details()
         cpu = self.cpu_info()
+        pacman_versions = None
+        if not IS_WIN and any(a['install']['type'] in ('pacman_pkg', 'pacman', 'aur') for a in apps):
+            output = self.command(['pacman', '-Q']).stdout
+            pacman_versions = dict(line.split(maxsplit=1) for line in output.splitlines() if len(line.split()) == 2)
+        for app in apps:
+            if pacman_versions is not None and app['install']['type'] in ('pacman_pkg', 'pacman', 'aur'):
+                app['installed'] = self.installed(app, pacman_versions)
+            else:
+                app['installed'] = self.installed(app)
         with self.lock:
             for app in apps:
-                release = self.state['releases'].get(app['id'], {})
-                app['installed'] = self.installed(app)
+                release = self.cached_release(app)
                 app['latest'] = release.get('tag')
                 app['release'] = release
                 app['update'] = bool(app['installed'] and app['latest'] and self.newer(app['latest'], app['installed']))
@@ -387,7 +445,7 @@ class Engine:
                 app['compatible'] = self.is_compatible(app)
                 app['data_paths'] = [str(p) for p in self.user_data_paths(app)]
                 app['build_info'] = self.app_build_info(app, details.get(app['id']), cpu['cores'])
-            return dict(apps=apps, busy=self.busy, refreshing=self.refreshing, ai_running=self.ai_running, ai_report=self.ai_report, pending_fixes=copy.deepcopy(self.pending_fixes), term_cwd=self.term_cwd, ai_configured=bool(self.get_ai_key('openai')), ai_keys={p: bool(self.get_ai_key(p)) for p in ('openai', 'anthropic', 'gemini', 'openrouter', 'custom', 'subscription')}, ai_cli_tools={c: bool(shutil.which(c)) for c in ('opencode', 'codex', 'claude', 'gemini')}, ai_key_profiles={p: self.public_ai_keys(p) for p in ('openai', 'anthropic', 'gemini', 'openrouter', 'custom')}, ai_active_keys={p: self.active_ai_key_id(p) for p in ('openai', 'anthropic', 'gemini', 'openrouter', 'custom')}, ai_models=copy.deepcopy(self.state.get('ai_models', {})), notice=self.notice, last_error=self.last_error, warnings=self.warnings, platform=self.platform, cpu=cpu, prefs=copy.deepcopy(self.state.get('prefs', {})), revision=time.monotonic())
+            return dict(apps=apps, busy=self.busy, refreshing=self.refreshing, **self.ai_state(), ai_configured=bool(self.get_ai_key('openai')), ai_keys={p: bool(self.get_ai_key(p)) for p in ('openai', 'anthropic', 'gemini', 'openrouter', 'custom', 'subscription')}, ai_cli_tools={c: bool(shutil.which(c)) for c in ('opencode', 'codex', 'claude', 'gemini')}, ai_key_profiles={p: self.public_ai_keys(p) for p in ('openai', 'anthropic', 'gemini', 'openrouter', 'custom')}, ai_active_keys={p: self.active_ai_key_id(p) for p in ('openai', 'anthropic', 'gemini', 'openrouter', 'custom')}, ai_models=copy.deepcopy(self.state.get('ai_models', {})), notice=self.notice, last_error=self.last_error, warnings=self.warnings, platform=self.platform, cpu=cpu, prefs=copy.deepcopy(self.state.get('prefs', {})))
 
     def newer(self, latest, installed):
         if installed == 'unknown':
@@ -511,43 +569,97 @@ class Engine:
             return secrets_box.get('openai_api_key', '').strip()
         return ''
 
-    def cancel_ai(self):
-        self.ai_cancel.set()
-        proc = self.ai_proc
-        if proc and proc.poll() is None:
-            try:
-                proc.terminate()
-            except OSError:
-                pass
+    def ai_state(self):
+        with self.lock:
+            return dict(ai_running=self.ai_running, ai_phase=self.ai_phase,
+                        ai_outcome=self.ai_outcome, ai_report=self.ai_report,
+                        pending_fixes=copy.deepcopy(self.pending_fixes),
+                        term_cwd=self.term_cwd, revision=time.monotonic())
 
-    def _run_cancellable_cli(self, argv, stdin_text=None, timeout=120):
-        proc = subprocess.Popen(
-            argv, cwd=str(ROOT),
-            stdin=subprocess.PIPE if stdin_text is not None else subprocess.DEVNULL,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-        )
-        self.ai_proc = proc
+    def _begin_ai(self, phase):
+        with self.lock:
+            if self.ai_running:
+                raise ValueError('Another AI task is running')
+            self.ai_running = True
+            self.ai_phase = phase
+            self.ai_outcome = ''
+            self.ai_cancel.clear()
+
+    def _publish_ai(self, phase=None):
+        with self.lock:
+            if phase and not self.ai_cancel.is_set():
+                self.ai_phase = phase
+            self.emit('ai', self.ai_state())
+
+    def _finish_ai(self, outcome):
+        with self.lock:
+            self.ai_running = False
+            self.ai_phase = ''
+            self.ai_outcome = outcome
+            try:
+                atomic_json(self.ai_result_path, {'report': self.ai_report[-65536:],
+                            'outcome': outcome, 'fixes': self.pending_fixes, 'cwd': self.term_cwd})
+            except OSError as e:
+                self.ai_report += f'\nCould not save AI report: {e}'
+            self._publish_ai()
+
+    def cancel_ai(self):
+        with self.lock:
+            if self.ai_running:
+                self.ai_phase = 'Stopping'
+                self.ai_cancel.set()
+                if self.ai_proc is not None:
+                    self._stop_ai_process(self.ai_proc)
+                self._publish_ai()
+
+    @staticmethod
+    def _stop_ai_process(proc):
         try:
-            if stdin_text is not None:
+            if IS_WIN:
                 try:
-                    proc.stdin.write(stdin_text)
-                    proc.stdin.close()
-                except OSError:
+                    subprocess.run(['taskkill', '/T', '/F', '/PID', str(proc.pid)], timeout=3,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                except (OSError, subprocess.TimeoutExpired):
                     pass
-            deadline = time.monotonic() + timeout
-            while proc.poll() is None:
+                proc.kill()
+            else:
+                os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+    def _run_cancellable_cli(self, argv, stdin_text=None, timeout=900, cwd=None):
+        # communicate drains both pipes while writing the prompt. Waiting for exit
+        # first deadlocks as soon as the CLI fills either pipe with diagnostics.
+        proc = subprocess.Popen(
+            argv, cwd=cwd or str(ROOT), start_new_session=not IS_WIN,
+            stdin=subprocess.PIPE if stdin_text is not None else subprocess.DEVNULL,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, errors='replace',
+        )
+        with self.lock:
+            self.ai_proc = proc
+        deadline = time.monotonic() + timeout
+        try:
+            while True:
                 if self.ai_cancel.is_set():
-                    proc.terminate()
                     raise Cancelled('Cancelled by user')
-                if time.monotonic() > deadline:
-                    proc.terminate()
-                    raise TimeoutError(f'Timed out after {timeout}s')
-                time.sleep(0.15)
-            out, err = proc.communicate()
-            return proc.returncode, out, err
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError(f'{argv[0]} did not finish within {timeout:g}s')
+                try:
+                    out, err = proc.communicate(input=stdin_text, timeout=min(.25, remaining))
+                except subprocess.TimeoutExpired:
+                    stdin_text = None
+                    continue
+                if self.ai_cancel.is_set():
+                    raise Cancelled('Cancelled by user')
+                return proc.returncode, out, err
         finally:
-            if self.ai_proc is proc:
-                self.ai_proc = None
+            if proc.returncode is None:
+                self._stop_ai_process(proc)
+                proc.communicate()
+            with self.lock:
+                if self.ai_proc is proc:
+                    self.ai_proc = None
 
     def call_ai_provider(self, provider, key, model, base_url, sys_prompt, user_payload, thinking='auto'):
         t = (thinking or 'auto').strip().lower()
@@ -569,9 +681,9 @@ class Engine:
                     payload['thinking'] = {'type': 'enabled', 'budget_tokens': budget}
                     payload['max_tokens'] = budget + 4096
                 req = urllib.request.Request('https://api.anthropic.com/v1/messages', data=json.dumps(payload).encode(), headers={'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01'}, method='POST')
-                with urllib.request.urlopen(req, timeout=180) as resp:
+                with urllib.request.urlopen(req, timeout=600) as resp:
                     blocks = json.loads(resp.read()).get('content', [])
-                    return next((b['text'] for b in blocks if b.get('type') == 'text' and 'text' in b), blocks[0]['text'])
+                    return ''.join(b['text'] for b in blocks if b.get('type') == 'text' and 'text' in b)
             elif provider == 'gemini':
                 if not key:
                     raise ValueError('Set a Gemini API key first')
@@ -585,7 +697,7 @@ class Engine:
                     'generationConfig': gen_cfg,
                 }
                 req = urllib.request.Request(f'https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={urllib.parse.quote(key, safe="")}', data=json.dumps(payload).encode(), headers={'Content-Type': 'application/json'}, method='POST')
-                with urllib.request.urlopen(req, timeout=180) as resp:
+                with urllib.request.urlopen(req, timeout=600) as resp:
                     return json.loads(resp.read())['candidates'][0]['content']['parts'][0]['text']
             elif provider == 'subscription':
                 cli = (base_url or '').strip().lower() or next((c for c in ('opencode', 'codex', 'claude', 'gemini') if shutil.which(c)), 'opencode')
@@ -593,24 +705,25 @@ class Engine:
                     raise ValueError(f'Unsupported subscription CLI: {cli}')
                 if not shutil.which(cli):
                     raise ValueError(f'{cli} CLI is not installed on this machine')
-                if cli == 'opencode':
-                    fd, tmp_path = tempfile.mkstemp(prefix='armin-ai-', suffix='.json')
-                    os.close(fd)
-                    Path(tmp_path).write_text(user_payload)
-                    try:
-                        argv = ['opencode', 'run', *(['-m', model] if model else []), '-f', tmp_path, '--', sys_prompt + '\nReturn ONLY valid JSON.']
-                        rc, out, err = self._run_cancellable_cli(argv, timeout=120)
-                    finally:
-                        Path(tmp_path).unlink(missing_ok=True)
-                elif cli == 'codex':
-                    argv = ['codex', 'exec', '--skip-git-repo-check', *(['-m', model] if model else []), '-']
-                    rc, out, err = self._run_cancellable_cli(argv, stdin_text=f'{sys_prompt}\n\n{user_payload}', timeout=120)
-                elif cli == 'claude':
-                    argv = ['claude', '-p', *(['--model', model] if model else [])]
-                    rc, out, err = self._run_cancellable_cli(argv, stdin_text=f'{sys_prompt}\n\n{user_payload}', timeout=120)
-                else:
-                    argv = ['gemini', *(['-m', model] if model else []), '-p', sys_prompt]
-                    rc, out, err = self._run_cancellable_cli(argv, stdin_text=user_payload, timeout=120)
+                # The launcher owns catalog writes. Keep one-shot inference
+                # outside the project so CLI agents do not run repository tasks.
+                with tempfile.TemporaryDirectory(prefix='armin-ai-') as workdir:
+                    stdin_text = f'{sys_prompt}\n\n{user_payload}'
+                    if cli == 'opencode':
+                        attachment = Path(workdir) / 'facts.json'
+                        attachment.write_text(user_payload, encoding='utf-8')
+                        argv = ['opencode', 'run', *(['-m', model] if model else []), '-f', str(attachment), '--', sys_prompt + '\nReturn ONLY valid JSON.']
+                        stdin_text = None
+                    elif cli == 'codex':
+                        effort = ['-c', f'model_reasoning_effort="{use_thinking}"'] if use_thinking != 'auto' else []
+                        argv = ['codex', 'exec', '--skip-git-repo-check', '--sandbox', 'read-only',
+                                *(['-m', model] if model else []), *effort, '-']
+                    elif cli == 'claude':
+                        argv = ['claude', '-p', *(['--model', model] if model else [])]
+                    else:
+                        argv = ['gemini', *(['-m', model] if model else []), '-p', sys_prompt]
+                        stdin_text = user_payload
+                    rc, out, err = self._run_cancellable_cli(argv, stdin_text=stdin_text, cwd=workdir)
                 if rc != 0:
                     raise ValueError((err or out or f'{cli} exited {rc}').strip()[-600:])
                 return out
@@ -634,23 +747,49 @@ class Engine:
                 if use_thinking != 'auto' and provider in ('openai', 'openrouter'):
                     payload['reasoning_effort'] = use_thinking
                 req = urllib.request.Request(f'{endpoint}/chat/completions', data=json.dumps(payload).encode(), headers=headers, method='POST')
-                with urllib.request.urlopen(req, timeout=180) as resp:
+                with urllib.request.urlopen(req, timeout=600) as resp:
                     return json.loads(resp.read())['choices'][0]['message']['content']
 
-        try:
-            text = send_once(t)
-        except urllib.error.HTTPError as e:
-            if e.code == 400 and t != 'auto':
-                text = send_once('auto')
-            else:
-                detail = ''
+        def request_text():
+            try:
+                return send_once(t)
+            except urllib.error.HTTPError as e:
+                if e.code == 400 and t != 'auto':
+                    return send_once('auto')
+                else:
+                    detail = ''
+                    try:
+                        raw_err = e.read().decode('utf-8', errors='ignore')
+                        err_json = json.loads(raw_err)
+                        detail = (err_json.get('error', {}).get('message') if isinstance(err_json.get('error'), dict) else err_json.get('error')) or raw_err
+                    except Exception:
+                        pass
+                    raise ValueError(f'{provider} API {e.code}: {str(detail or e.reason).strip()[:300]}') from e
+
+        if provider == 'subscription':
+            text = request_text()
+        else:
+            # urllib may block waiting for response headers. A stopped job must
+            # never process a late result or hold up the next user request.
+            response = queue.Queue(maxsize=1)
+            def request_worker():
                 try:
-                    raw_err = e.read().decode('utf-8', errors='ignore')
-                    err_json = json.loads(raw_err)
-                    detail = (err_json.get('error', {}).get('message') if isinstance(err_json.get('error'), dict) else err_json.get('error')) or raw_err
-                except Exception:
-                    pass
-                raise ValueError(f'{provider} API {e.code}: {str(detail or e.reason).strip()[:300]}') from e
+                    response.put((request_text(), None))
+                except Exception as e:
+                    response.put((None, e))
+            threading.Thread(target=request_worker, name='armin-ai-http', daemon=True).start()
+            while not self.ai_cancel.is_set():
+                try:
+                    text, error = response.get(timeout=.25)
+                    if error:
+                        raise error
+                    break
+                except queue.Empty:
+                    continue
+            else:
+                raise Cancelled('Cancelled by user')
+        if self.ai_cancel.is_set():
+            raise Cancelled('Cancelled by user')
         cleaned = re.sub(r'^```(?:json)?\s*|\s*```$', '', text.strip(), flags=re.I)
         try:
             return json.loads(cleaned)
@@ -744,7 +883,8 @@ class Engine:
                 return {'installed': True, 'ok': False, 'reason': 'X11 socket /tmp/.X11-unix/X0 missing (X0_ exists)', 'exe': str(exe), 'fixable_x11': True}
             if app['install'].get('type') != 'appimage' and shutil.which('ldd'):
                 try:
-                    head = exe.read_bytes()[:4]
+                    with exe.open('rb') as binary:
+                        head = binary.read(4)
                     if head == b'\x7fELF':
                         p = subprocess.run(['ldd', str(exe)], capture_output=True, text=True, timeout=2)
                         missing = [ln.strip() for ln in p.stdout.splitlines() if 'not found' in ln]
@@ -758,14 +898,12 @@ class Engine:
         with self.lock:
             cur = self.ai_report or ''
             self.ai_report = (cur + ('\n' if cur and not cur.endswith('\n') else '') + text).strip()
-        self.emit('state', self.snapshot())
+        self._publish_ai()
 
     def _run_shell_cmd(self, cmd, needs_admin=False):
+        self._begin_ai('Running command')
         def work():
-            with self.lock:
-                self.ai_running = True
-                self.ai_cancel.clear()
-            self.emit('state', self.snapshot())
+            outcome = 'complete'
             try:
                 run_cmd = cmd.strip()
                 if run_cmd.startswith('sudo '):
@@ -781,13 +919,16 @@ class Engine:
                     argv = ['cmd', '/c', run_cmd] if IS_WIN else ['sh', '-c', run_cmd]
                 proc = subprocess.Popen(
                     argv, cwd=self.term_cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                    stdin=subprocess.DEVNULL, text=True, errors='replace', bufsize=1,
+                    stdin=subprocess.DEVNULL, text=True, errors='replace', bufsize=1, start_new_session=not IS_WIN,
                 )
-                self.ai_proc = proc
+                with self.lock:
+                    self.ai_proc = proc
+                    if self.ai_cancel.is_set():
+                        self._stop_ai_process(proc)
                 buf = []
                 for line in proc.stdout:
                     if self.ai_cancel.is_set():
-                        proc.terminate()
+                        self._stop_ai_process(proc)
                         break
                     buf.append(line.rstrip('\n'))
                     if len(buf) >= 5:
@@ -795,19 +936,21 @@ class Engine:
                         buf.clear()
                 if buf:
                     self._append_term('\n'.join(buf))
+                proc.stdout.close()
                 rc = proc.wait()
                 if self.ai_cancel.is_set():
+                    outcome = 'cancelled'
                     self._append_term('Cancelled by user.')
                 elif rc != 0:
+                    outcome = 'error'
                     self._append_term(f'[exit {rc}]')
             except Exception as e:
+                outcome = 'error'
                 self._append_term(f'Error: {e}')
             finally:
-                if self.ai_proc is not None:
-                    self.ai_proc = None
                 with self.lock:
-                    self.ai_running = False
-                self.emit('state', self.snapshot())
+                    self.ai_proc = None
+                self._finish_ai(outcome)
 
         threading.Thread(target=work, name='armin-term-cmd', daemon=True).start()
 
@@ -819,7 +962,7 @@ class Engine:
             if not fix:
                 raise ValueError('Fix command not found')
             self.pending_fixes = [f for f in self.pending_fixes if f['id'] != fix_id]
-        self._run_shell_cmd(fix['cmd'], needs_admin=bool(fix.get('needs_admin')))
+            self._run_shell_cmd(fix['cmd'], needs_admin=bool(fix.get('needs_admin')))
 
     def terminal_exec(self, raw_input, provider='openai', model='', base_url='', thinking='auto'):
         text = (raw_input or '').strip()
@@ -830,7 +973,9 @@ class Engine:
                 self.ai_report = ''
                 self.pending_fixes = []
                 self.chat_history = []
-            self.emit('state', self.snapshot())
+                self.ai_outcome = ''
+                self.ai_result_path.unlink(missing_ok=True)
+            self._publish_ai()
             return
         if text == 'help':
             self._append_term(
@@ -866,11 +1011,7 @@ class Engine:
         key = self.get_ai_key(provider)
         if provider not in ('custom', 'subscription') and not key:
             raise ValueError(f'Set an API key for {provider} first')
-        with self.lock:
-            if self.ai_running:
-                raise ValueError('Another AI task is running')
-            self.ai_running = True
-            self.ai_cancel.clear()
+        self._begin_ai('Checking installed apps')
         self._append_term(f'You: {text}')
 
         def run_readonly_inspect(cmd_str):
@@ -895,9 +1036,16 @@ class Engine:
                 return f'[inspect error: {e}]'
 
         def chat_work():
+            outcome = 'complete'
             try:
-                linux_cat = json.loads((ROOT / 'catalog.json').read_text())
-                launch_status = [{'id': a['id'], 'name': a['name'], **self.check_launchable(a)} for a in linux_cat['apps'] if self.installed(a)]
+                linux_cat = self.catalog.load()
+                launch_status = []
+                for app in linux_cat['apps']:
+                    if self.ai_cancel.is_set():
+                        raise Cancelled('Cancelled by user')
+                    info = self.check_launchable(app)
+                    if info['installed']:
+                        launch_status.append({'id': app['id'], 'name': app['name'], **info})
                 sys_prompt = (
                     'You are the interactive AI assistant inside Armin Launcher\'s mini terminal. '
                     'Help the user diagnose app launch failures, inspect logs, and fix issues. '
@@ -918,7 +1066,10 @@ class Engine:
                         'installed_launch_status': launch_status,
                         'inspect_results': inspect_results,
                     }, separators=(',', ':'))
+                    self._publish_ai(f'Waiting for {base_url if provider == "subscription" and base_url else provider}')
                     res = self.call_ai_provider(provider, key, model, base_url, sys_prompt, payload, thinking=thinking)
+                    if self.ai_cancel.is_set():
+                        raise Cancelled('Cancelled by user')
                     cmds = [str(c).strip() for c in (res.get('inspect_commands') or []) if str(c).strip()][:3]
                     if not cmds or _round == 2:
                         break
@@ -943,13 +1094,13 @@ class Engine:
                     self.chat_history = (self.chat_history + [{'role': 'user', 'content': text}, {'role': 'assistant', 'content': reply}])[-12:]
                 self._append_term(f'AI: {reply}')
             except Cancelled:
+                outcome = 'cancelled'
                 self._append_term('Cancelled by user.')
             except Exception as e:
+                outcome = 'error'
                 self._append_term(f'Error: {e}')
             finally:
-                with self.lock:
-                    self.ai_running = False
-                self.emit('state', self.snapshot())
+                self._finish_ai(outcome)
 
         threading.Thread(target=chat_work, name='armin-ai-chat', daemon=True).start()
 
@@ -1000,8 +1151,14 @@ class Engine:
         entry = details.get(aid) if isinstance(details.get(aid), dict) else {}
         has_shot = any((ROOT / 'ui' / s.get('url', '').lstrip('/')).is_file() for s in entry.get('shots', []) if isinstance(s, dict))
         needs_details = not entry.get('about') or not entry.get('features') or not entry.get('accent2')
-        if has_icon and has_shot and not needs_details:
-            return False
+        if has_icon and has_shot:
+            if not needs_details:
+                return False
+            # A missing secondary shade can be derived entirely from the
+            # catalog color when the app already has its text and imagery.
+            if entry.get('about') and entry.get('features') and app.get('accent', '').lower() not in ('', '#2d81ff', '#000000', '#ffffff'):
+                entry['accent2'] = self._shift_hex(app['accent'])
+                return True
 
         badge_re = re.compile(r'(shields\.io|sonarcloud\.io|coderabbit\.ai|codecov\.io|badgen\.net|badge|workflows/|actions/workflows)', re.I)
         icon_candidates, shot_candidates = [], []
@@ -1069,11 +1226,18 @@ class Engine:
         if avatar_url:
             icon_candidates.append(avatar_url)
 
+        # Probe a few distinct image candidates within a per-app budget.
+        asset_deadline = time.monotonic() + 25
         icon_bytes = b''
         if not has_icon:
-            for u in icon_candidates:
+            for u in list(dict.fromkeys(icon_candidates))[:5]:
+                if self.ai_cancel.is_set():
+                    raise Cancelled('Cancelled by user')
+                remaining = asset_deadline - time.monotonic()
+                if remaining <= 0:
+                    break
                 try:
-                    data, ctype = fetch_bytes(u)
+                    data, ctype = fetch_bytes(u, timeout=min(remaining, 10))
                     if len(data) < 64:
                         continue
                     if b'<svg' in data[:500].lower():
@@ -1103,9 +1267,14 @@ class Engine:
                     break
 
         if not has_shot:
-            for u in shot_candidates:
+            for u in list(dict.fromkeys(shot_candidates))[:5]:
+                if self.ai_cancel.is_set():
+                    raise Cancelled('Cancelled by user')
+                remaining = asset_deadline - time.monotonic()
+                if remaining <= 0:
+                    break
                 try:
-                    data, ctype = fetch_bytes(u, timeout=15)
+                    data, ctype = fetch_bytes(u, timeout=min(remaining, 10))
                     if len(data) < 2048 or b'<svg' in data[:400].lower():
                         continue
                     ext = '.png' if data[:4] == b'\x89PNG' else '.webp' if data[:4] == b'RIFF' else '.jpg'
@@ -1173,26 +1342,64 @@ class Engine:
             argv = [term, *login_cmd]
         subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
 
+    def _ai_release_facts(self, repos, label, noise_asset_re):
+        def lookup(repo):
+            try:
+                with self.request(f'{self.api_base}/repos/{repo}/releases/latest', {'Accept': 'application/vnd.github+json'}) as response:
+                    release = json.load(response)
+                return {'latest_tag': release.get('tag_name'), 'assets': [
+                    asset['name'] for asset in release.get('assets', []) if not noise_asset_re.search(asset['name'])]}
+            except urllib.error.HTTPError as e:
+                return {'api_status': e.code}
+            except (OSError, KeyError, ValueError) as e:
+                return {'api_error': str(e)}
+
+        facts = {}
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=5, thread_name_prefix='armin-ai-release')
+        try:
+            pending = {executor.submit(lookup, name): name for name in dict.fromkeys(repos)}
+            total = len(pending)
+            while pending:
+                if self.ai_cancel.is_set():
+                    raise Cancelled('Cancelled by user')
+                done, _ = concurrent.futures.wait(pending, timeout=.2, return_when=concurrent.futures.FIRST_COMPLETED)
+                if done:
+                    for future in done:
+                        facts[pending.pop(future)] = future.result()
+                    self._publish_ai(f'{label} ({len(facts)}/{total})')
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
+        return facts
+
     def ai_maintain(self, prompt='', model='gpt-4o-mini', provider='openai', base_url='', thinking='auto'):
         key = self.get_ai_key(provider)
         if provider not in ('custom', 'subscription') and not key:
             raise ValueError(f'Set an API key for {provider} first')
         with self.lock:
-            if self.ai_running:
-                raise ValueError('Another AI task is running')
-            self.ai_running = True
-            self.ai_cancel.clear()
+            self._begin_ai('Checking catalog')
             self.ai_report = 'Gathering live release and asset metadata…'
-        self.emit('state', self.snapshot())
+        self._publish_ai()
 
         def work():
             log = []
+            changed = False
+            outcome = 'complete'
             try:
-                linux_cat = json.loads((ROOT / 'catalog.json').read_text())
+                linux_path = ROOT / 'catalog.json'
                 win_path = ROOT / 'catalog.windows.json'
-                win_cat = json.loads(win_path.read_text()) if win_path.is_file() else {'version': 1, 'apps': []}
+                bundled = self.catalog.path in (linux_path, win_path)
+                if not bundled:
+                    active = self.catalog.load()
+                    windows_catalog = (self.catalog.path.name.endswith('.windows.json') or
+                                       any(app['install']['type'] in ('winget', 'exe', 'msi', 'zip') for app in active['apps']) or
+                                       (not active['apps'] and IS_WIN))
+                    linux_path = None if windows_catalog else self.catalog.path
+                    win_path = self.catalog.path if windows_catalog else None
+                empty = {'version': 1, 'apps': []}
+                linux_cat = Catalog(linux_path).load() if linux_path else empty
+                win_cat = Catalog(win_path).load() if win_path and win_path.is_file() else empty
                 det_path = ROOT / 'ui' / 'details.json'
-                details = json.loads(det_path.read_text()) if det_path.is_file() else {}
+                details = json.loads(det_path.read_text()) if bundled and det_path.is_file() else {}
                 last_tags = dict(self.state.get('ai_last_maintain_tags', {}))
                 stale_shots = []
 
@@ -1200,24 +1407,26 @@ class Engine:
                 noise_asset_re = re.compile(r'(\.(sha256|sha512|sha1|md5|sig|asc|zsync|blockmap)|arm64|aarch64|armv7|i386|i686)', re.I)
                 facts = []
                 total_apps = len(linux_cat['apps'])
+                known_repos = [app['source']['repo'] for app in linux_cat['apps'] if app['source']['type'] == 'github_release']
+                release_facts = self._ai_release_facts(known_repos, 'Checking releases', noise_asset_re)
                 for idx_app, a in enumerate(linux_cat['apps'], 1):
                     if self.ai_cancel.is_set():
                         raise Cancelled('Cancelled by user')
                     aid = a['id']
                     if idx_app == 1 or idx_app % 5 == 0 or idx_app == total_apps:
                         self.ai_report = f'Checking catalog & releases ({idx_app}/{total_apps}): {a["name"]}…'
-                        self.emit('state', self.snapshot())
-                    has_icon = any((ROOT / 'ui' / 'icons' / f'{aid}.{e}').is_file() for e in ('png', 'svg'))
+                        self._publish_ai(f'Checking catalog ({idx_app}/{total_apps})')
+                    has_icon = bundled and any((ROOT / 'ui' / 'icons' / f'{aid}.{e}').is_file() for e in ('png', 'svg'))
                     shots = [s for s in details.get(aid, {}).get('shots', []) if s.get('url', '').startswith('/shots/') and (ROOT / 'ui' / s['url'].lstrip('/')).is_file()]
                     launch_info = self.check_launchable(a)
-                    if launch_info.get('fixable_chmod') and launch_info.get('exe'):
+                    if bundled and launch_info.get('fixable_chmod') and launch_info.get('exe'):
                         try:
                             os.chmod(launch_info['exe'], 0o755)
                             launch_info = self.check_launchable(a)
                             log.append(f'Fixed +x permissions for {a["name"]}')
                         except OSError:
                             pass
-                    if launch_info.get('fixable_x11') and not IS_WIN:
+                    if bundled and launch_info.get('fixable_x11') and not IS_WIN:
                         try:
                             for sock in Path('/tmp/.X11-unix').glob('X[0-9]*_'):
                                 tgt = sock.with_name(sock.name[:-1])
@@ -1229,17 +1438,9 @@ class Engine:
                             pass
                     if launch_info.get('installed') and launch_info.get('ok') is False:
                         log.append(f'Launch check failed for {a["name"]}: {launch_info.get("reason")}')
-                    item = {'id': aid, 'name': a['name'], 'source': a['source'], 'install': a['install'], 'has_icon': has_icon, 'local_shots': len(shots), 'build_info': details.get(aid, {}).get('build_info'), 'launchable': launch_info}
+                    item = {'id': aid, 'name': a['name'], 'source': a['source'], 'install': a['install'], 'has_icon': has_icon if bundled else None, 'local_shots': len(shots) if bundled else None, 'build_info': details.get(aid, {}).get('build_info'), 'launchable': launch_info}
                     if a['source']['type'] == 'github_release':
-                        try:
-                            with self.request(f'{self.api_base}/repos/{a["source"]["repo"]}/releases/latest', {'Accept': 'application/vnd.github+json'}) as r:
-                                rel = json.load(r)
-                            item['latest_tag'] = rel.get('tag_name')
-                            item['assets'] = [x['name'] for x in rel.get('assets', []) if not noise_asset_re.search(x['name'])]
-                        except urllib.error.HTTPError as e:
-                            item['api_status'] = e.code
-                        except Exception as e:
-                            item['api_error'] = str(e)
+                        item.update(release_facts[a['source']['repo']])
                     cur_tag = item.get('latest_tag') or self.state.get('releases', {}).get(aid, {}).get('tag')
                     if cur_tag:
                         item['latest_tag'] = cur_tag
@@ -1251,26 +1452,23 @@ class Engine:
                     facts.append(item)
                 win_facts = [{'id': a['id'], 'name': a['name'], 'source': a['source'], 'install': a['install']} for a in win_cat['apps']]
 
-                known_repos = {a['source'].get('repo', '').lower() for a in linux_cat['apps'] if a['source']['type'] == 'github_release'}
+                known_names = {name.lower() for name in known_repos}
                 artcraft_repos = []
+                self.ai_report = f'Checked {len(facts)} apps\nChecking ArtCraft (storytold) for new releases…'
+                self._publish_ai('Checking new releases')
                 try:
-                    self.ai_report = f'Checked {len(facts)} apps\nChecking ArtCraft (storytold) for new releases…'
-                    self.emit('state', self.snapshot())
-                    with self.request(f'{self.api_base}/users/storytold/repos?per_page=30&sort=updated', {'Accept': 'application/vnd.github+json'}) as r:
-                        for repo in json.load(r):
-                            rname = repo.get('full_name', '')
-                            if not rname or repo.get('archived') or repo.get('fork') or rname.lower() in known_repos:
-                                continue
-                            try:
-                                with self.request(f'{self.api_base}/repos/{rname}/releases/latest', {'Accept': 'application/vnd.github+json'}) as rr:
-                                    rel = json.load(rr)
-                                assets = [x['name'] for x in rel.get('assets', []) if not noise_asset_re.search(x['name'])]
-                                if assets:
-                                    artcraft_repos.append({'repo': rname, 'name': repo.get('name'), 'description': repo.get('description'), 'homepage': repo.get('homepage'), 'latest_tag': rel.get('tag_name'), 'assets': assets})
-                            except Exception:
-                                pass
+                    with self.request(f'{self.api_base}/users/storytold/repos?per_page=30&sort=updated', {'Accept': 'application/vnd.github+json'}) as response:
+                        candidates = {repo['full_name']: repo for repo in json.load(response)
+                                      if repo.get('full_name') and not repo.get('archived') and not repo.get('fork')
+                                      and repo['full_name'].lower() not in known_names}
                 except Exception:
-                    pass
+                    candidates = {}
+                discoveries = self._ai_release_facts(candidates, 'Checking new releases', noise_asset_re)
+                for name, repo in candidates.items():
+                    release = discoveries[name]
+                    if release.get('assets'):
+                        artcraft_repos.append({'repo': name, 'name': repo.get('name'), 'description': repo.get('description'),
+                                               'homepage': repo.get('homepage'), **release})
 
                 search_hits = []
                 if prompt.strip():
@@ -1278,6 +1476,8 @@ class Engine:
                     try:
                         with self.request(f'{self.api_base}/search/repositories?q={q}&per_page=5', {'Accept': 'application/vnd.github+json'}) as r:
                             for repo in json.load(r).get('items', []):
+                                if self.ai_cancel.is_set():
+                                    break
                                 rname = repo['full_name']
                                 assets = []
                                 try:
@@ -1295,12 +1495,6 @@ class Engine:
                         pass
 
                 log.append(f'Checked {len(facts)} apps' + (f' ({len(stale_shots)} screenshot(s) flagged stale after update)' if stale_shots else '') + (f' + {len(artcraft_repos)} new ArtCraft releases' if artcraft_repos else '') + (f' + search hits for "{prompt.strip()}"' if prompt.strip() else ''))
-                try:
-                    self.fetch_ai_models(provider, key, base_url)
-                except Exception:
-                    pass
-                self.ai_report = '\n'.join(log) + f'\n⠋ Asking {provider} ({model or "default"}) to review catalog & assets… (0s / 180s max)'
-                self.emit('state', self.snapshot())
 
                 # 2. Call selected AI provider
                 sys_prompt = (
@@ -1318,41 +1512,24 @@ class Engine:
                     '"assets": [{"id": str, "icon_url": str|null, "shot_url": str|null, "shot_caption": str, "about": str, "features": [{"title": str, "text": str}], "build_info": {"from_source": bool, "estimated_gb": number, "base_minutes_8core": number}|null}]}. '
                     'Only suggest real, verified assets seen in the provided facts, artcraft_repos, or search_hits. Keep lists empty if no changes are needed.'
                 )
+                if not bundled:
+                    target = 'Windows' if win_path else 'Linux'
+                    sys_prompt += f' This run maintains only the selected {target} catalog. Local asset metadata is unavailable. Leave assets and the other platform empty.'
                 user_payload = json.dumps(
                     {'request': prompt.strip() or 'Audit catalog for better install/update methods, new ArtCraft apps, unreleased removals, and missing icons/screenshots.', 'facts': facts, 'win_facts': win_facts, 'artcraft_repos': artcraft_repos, 'search_hits': search_hits},
                     separators=(',', ':'),
                 )
-                def ask_with_heartbeat(payload, label):
-                    done = threading.Event()
-                    t0 = time.monotonic()
-                    frames = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+                def ask_provider(payload, label):
+                    if self.ai_cancel.is_set():
+                        raise Cancelled('Cancelled by user')
+                    self.ai_report = '\n'.join([*log, label])
+                    self._publish_ai(f'Waiting for {base_url if provider == "subscription" and base_url else provider}')
+                    result = self.call_ai_provider(provider, key, model, base_url, sys_prompt, payload, thinking=thinking)
+                    if self.ai_cancel.is_set():
+                        raise Cancelled('Cancelled by user')
+                    return result
 
-                    def pulse():
-                        tick = 0
-                        while not done.wait(1):
-                            tick += 1
-                            secs = int(time.monotonic() - t0)
-                            spin = frames[tick % len(frames)]
-                            self.ai_report = '\n'.join(log) + f'\n{spin} {label} ({secs}s / 180s max)'
-                            self.emit('state', self.snapshot())
-
-                    threading.Thread(target=pulse, daemon=True).start()
-                    try:
-                        return self.call_ai_provider(provider, key, model, base_url, sys_prompt, payload, thinking=thinking)
-                    finally:
-                        done.set()
-
-                ask_label = f'Asking {provider} ({model or "default"}) to review catalog & assets…'
-                try:
-                    plan = ask_with_heartbeat(user_payload, ask_label)
-                except Exception as first_err:
-                    if 'timed out' in str(first_err).lower() or isinstance(first_err, TimeoutError):
-                        log.append('AI request timed out — retrying once…')
-                        self.ai_report = '\n'.join(log)
-                        self.emit('state', self.snapshot())
-                        plan = ask_with_heartbeat(user_payload, f'Retrying {provider} ({model or "default"})…')
-                    else:
-                        raise
+                plan = ask_provider(user_payload, f'Asking {provider} ({model or "default"}) to review catalog and assets…')
 
                 def build_and_validate(candidate):
                     nl = copy.deepcopy(linux_cat)
@@ -1386,11 +1563,12 @@ class Engine:
                 except Exception as val_err:
                     log.append(f'AI plan failed validation ({val_err}) — asking AI to fix it…')
                     self.ai_report = '\n'.join(log)
-                    self.emit('state', self.snapshot())
+                    self._publish_ai('Validating catalog changes')
                     repair_payload = json.dumps({'error': str(val_err), 'previous_plan': plan, 'facts': facts, 'win_facts': win_facts}, separators=(',', ':'))
-                    plan = ask_with_heartbeat(repair_payload, f'Repairing AI plan with {provider} ({model or "default"})…')
+                    plan = ask_provider(repair_payload, f'Repairing AI plan with {provider} ({model or "default"})…')
                     new_linux, new_win, remove_ids = build_and_validate(plan)
 
+                self._publish_ai('Applying catalog changes')
                 log.append('AI summary: ' + str(plan.get('summary', 'Done.')))
                 if remove_ids:
                     log.append('Removed: ' + ', '.join(sorted(remove_ids)))
@@ -1408,15 +1586,12 @@ class Engine:
                 if fixes:
                     log.append(f'Proposed {len(fixes)} fix command(s) — click Run below to execute.')
 
-                changed = False
-                if new_linux != linux_cat:
-                    atomic_json(ROOT / 'catalog.json', new_linux)
-                    changed = True
-                if new_win != win_cat and new_win['apps']:
-                    atomic_json(win_path, new_win)
-                    changed = True
-
-                for asset in plan.get('assets') or []:
+                if self.ai_cancel.is_set():
+                    raise Cancelled('Cancelled by user')
+                assets = (plan.get('assets') or []) if bundled else []
+                for asset in assets:
+                    if self.ai_cancel.is_set():
+                        raise Cancelled('Cancelled by user')
                     aid = asset.get('id', '')
                     if not re.fullmatch(r'[a-z0-9-]+', aid):
                         continue
@@ -1455,20 +1630,41 @@ class Engine:
                             pass
 
                 enriched_any = False
-                for app_obj in new_linux['apps']:
+                asset_apps = new_linux['apps'] if bundled else []
+                for idx, app_obj in enumerate(asset_apps, 1):
+                    self._publish_ai(f'Checking assets ({idx}/{len(asset_apps)}): {app_obj["name"]}')
+                    if self.ai_cancel.is_set():
+                        raise Cancelled('Cancelled by user')
                     if self.enrich_app_assets(app_obj, details, log):
                         enriched_any = True
                 if enriched_any:
                     validate_catalog(new_linux)
-                    atomic_json(ROOT / 'catalog.json', new_linux)
                     atomic_json(det_path, details)
                     changed = True
 
-                if changed:
+                # Recheck under the same locks as the editor immediately before
+                # publishing. The expensive model and network calls ran unlocked.
+                updates = [(path, before, after) for path, before, after in
+                           ((linux_path, linux_cat, new_linux), (win_path, win_cat, new_win))
+                           if path and before != after]
+                with contextlib.ExitStack() as locks:
+                    for path, before, after in sorted(updates):
+                        locks.enter_context(Catalog(path).locked())
+                        current = Catalog(path).load() if path.is_file() else empty
+                        if current != before:
+                            raise ValueError(f'{path.name} changed during the audit. Run the audit again to review your edits.')
+                    for path, _, after in updates:
+                        atomic_json(path, after)
+                        changed = True
+
+                if changed and bundled:
+                    self._publish_ai('Verifying catalog changes')
                     t = subprocess.run([sys.executable, '-m', 'unittest', 'discover', '-s', 'tests'], cwd=ROOT, capture_output=True, text=True, timeout=60)
                     if t.returncode != 0:
                         raise ValueError('Tests failed after AI update:\n' + t.stderr[-500:])
                     log.append('All unit tests passed.')
+                elif changed:
+                    log.append('Validated the updated catalog.')
                 else:
                     log.append('Catalog already up to date — no changes needed.')
 
@@ -1481,19 +1677,21 @@ class Engine:
                 self.ai_report = '\n'.join(log)
                 self.notice = 'AI Maintain complete.'
             except Cancelled:
+                outcome = 'cancelled'
                 log.append('Cancelled by user.')
                 self.ai_report = '\n'.join(log)
                 self.notice = 'AI Maintain cancelled.'
             except Exception as e:
+                outcome = 'error'
                 log.append(f'Error: {e}')
                 self.ai_report = '\n'.join(log)
                 self.last_error = str(e)
                 self.notice = str(e)
                 self.emit('error', {'message': str(e)})
             finally:
-                with self.lock:
-                    self.ai_running = False
-                self.emit('state', self.snapshot())
+                self._finish_ai(outcome)
+                if changed:
+                    self.emit('state', self.snapshot())
 
         threading.Thread(target=work, name='armin-ai-maintain', daemon=True).start()
 
@@ -1515,19 +1713,30 @@ class Engine:
         req_headers = {'User-Agent': 'ArminLauncher/1', **(headers or {})}
         if self.gh_token and url.startswith('https://api.github.com/'):
             req_headers.setdefault('Authorization', f'Bearer {self.gh_token}')
-        return urllib.request.urlopen(urllib.request.Request(url, headers=req_headers, method=method), timeout=20)
+        request = urllib.request.Request(url, headers=req_headers, method=method)
+        if run := getattr(self._refresh_context, 'run', None):
+            return urllib.request.urlopen(request, timeout=min(run.REQUEST_TIMEOUT, run.remaining()), context=run.ssl_context)
+        return urllib.request.urlopen(request, timeout=20)
 
     def github_release(self, app):
         src = app['source']
         url = f'{self.api_base}/repos/{src["repo"]}/releases' + ('?per_page=30' if src.get('prerelease') else '/latest')
-        cached = self.state['http'].get(url, {})
+        run = getattr(self._refresh_context, 'run', None)
+        with self.lock:
+            cache = run.http if run else self.state['http']
+            cached = cache.get(url, {})
         headers = {'Accept': 'application/vnd.github+json'}
         if cached.get('etag'):
             headers['If-None-Match'] = cached['etag']
         try:
             with self.request(url, headers) as response:
                 body = json.load(response)
-                self.state['http'][url] = {'etag': response.headers.get('ETag'), 'body': body}
+                with self.lock:
+                    if run:
+                        run.remaining()
+                    cache[url] = {'etag': response.headers.get('ETag'), 'body': body}
+                    if run:
+                        run.http_updates[url] = cache[url]
         except urllib.error.HTTPError as e:
             e.close()
             if e.code == 304 and 'body' in cached:
@@ -1560,7 +1769,8 @@ class Engine:
         if not match:
             raise ValueError('GitHub rate limited; latest release redirect unavailable')
         tag = urllib.parse.unquote(match[1])
-        old = copy.deepcopy(self.state['releases'].get(app['id'], {}))
+        with self.lock:
+            old = copy.deepcopy(self.cached_release(app))
         if old.get('tag') != tag:
             old = dict(tag=tag, notes='', url=final)
             pattern = src['asset_pattern'].replace('{tag}', tag).replace('{version}', tag.lstrip('v'))
@@ -1582,66 +1792,160 @@ class Engine:
         old.update(checked=time.time(), warning='GitHub rate limited; version from latest redirect. ' + ('Asset metadata unavailable; refresh later before installing.' if not old.get('asset') else 'Checksum metadata may be unavailable.'))
         return old
 
+    def cached_release(self, app):
+        app_id = app['id']
+        source = self.state['release_sources'].get(app_id, app['source'])
+        return self.state['releases'].get(app_id, {}) if app['source'] == source else {}
+
+    def _record_release(self, app, release):
+        self.state['releases'][app['id']] = release
+        self.state['release_sources'][app['id']] = app['source'].copy()
+
+    def _refresh_package_group(self, source, apps):
+        argv = (['pacman', '-Qu'] if source == 'arch_repo' else
+                [shutil.which('yay') or shutil.which('paru'), '-Qua'])
+        if not argv[0] or not shutil.which(argv[0]):
+            return {}, [f'{source}: package helper is not installed']
+        result = self.command(argv, timeout=6)
+        # pacman returns 1 for no upgrades. Other failures carry stderr.
+        failed = result.returncode != 0 and bool(result.stderr.strip())
+        warnings = [f'{source}: {result.stderr.strip()}'] if failed else []
+        versions = {}
+        for line in result.stdout.splitlines():
+            fields = line.split()
+            if len(fields) >= 4 and fields[2] == '->':
+                versions[fields[0]] = fields[3]
+        if source == 'arch_repo':
+            missing = list(dict.fromkeys(a['source']['package'] for a in apps if a['source']['package'] not in versions))
+            if missing:
+                result = self.command(['pacman', '-Si', *missing], timeout=4)
+                if result.returncode and result.stderr.strip():
+                    failed = True
+                    warnings.append(f'{source}: {result.stderr.strip()}')
+                for name, version in re.findall(r'^Name\s*:\s*(\S+)[^\n]*\nVersion\s*:\s*(\S+)', result.stdout, re.M):
+                    versions[name] = version
+        releases = {}
+        for app in apps:
+            version = versions.get(app['source']['package'])
+            if version or not failed:
+                releases[app['id']] = self._package_release(app, version)
+        return releases, warnings
+
+    def _package_release(self, app, version):
+        return dict(tag=version or self.installed(app), notes='Package updates use the configured package databases.',
+                    url=app['website'], checked=time.time())
+
+    def _refresh_app(self, app):
+        src = app['source']
+        if src['type'] == 'github_release':
+            return self.github_release(app)
+        if src['type'] == 'local':
+            return dict(tag='local', notes='Local user-built application.', url=app['website'], checked=time.time())
+        version = None
+        if src['type'] == 'winget' and IS_WIN and shutil.which('winget'):
+            result = self.command(['winget', 'show', '--id', src['package'], '-e', '--accept-source-agreements'], timeout=6)
+            match = re.search(r'^Version:\s*(\S+)', result.stdout, re.M)
+            if result.returncode or not match:
+                raise ValueError(result.stderr.strip() or 'WinGet could not determine the latest version')
+            version = match[1]
+        return self._package_release(app, version)
+
     def refresh(self):
+        apps = self.catalog.load()['apps']
+        with self.lock:
+            run = RefreshRun(self.cancel, self.state['http'])
+            checked = {app['id']: self.cached_release(app).get('checked') or 0 for app in apps}
+        if any(app['source']['type'] == 'github_release' for app in apps):
+            run.ssl_context = ssl.create_default_context()
+
+        tasks = queue.Queue()
+        results = queue.Queue()
+        for source in ('arch_repo', 'aur'):
+            group = [a for a in apps if a['source']['type'] == source]
+            if group:
+                tasks.put((source, group))
+        for app in sorted(apps, key=lambda a: checked.get(a['id'], 0)):
+            if app['source']['type'] not in ('arch_repo', 'aur'):
+                tasks.put((None, [app]))
+
+        def check():
+            self._refresh_context.run = run
+            try:
+                while not tasks.empty():
+                    run.remaining()
+                    if not self._refresh_slots.acquire(timeout=.1):
+                        continue
+                    try:
+                        source, group = tasks.get_nowait()
+                        try:
+                            if source:
+                                releases, warnings = self._refresh_package_group(source, group)
+                            else:
+                                app = group[0]
+                                releases, warnings = {app['id']: self._refresh_app(app)}, []
+                            run.remaining()
+                        except Cancelled:
+                            return
+                        except TimeoutError:
+                            run.remaining()
+                            labels = source or group[0]['name']
+                            releases, warnings = {}, [f'{labels}: check timed out; kept cached results']
+                        except Exception as exc:
+                            labels = source or group[0]['name']
+                            releases, warnings = {}, [f'{labels}: {exc}']
+                        results.put((group, releases, warnings))
+                    finally:
+                        self._refresh_slots.release()
+            except (Cancelled, TimeoutError, queue.Empty):
+                pass
+
+        pending = {app['id']: app for app in apps}
+        releases = {}
         warnings = []
-        rate_limited = []
+        rate_limited = 0
+        self.emit('refresh-progress', dict(completed=0, total=len(apps)))
         try:
-            apps = self.catalog.load()['apps']
-            updates = {}
-            for source, argv in [('arch_repo', ['pacman', '-Qu']), ('aur', [shutil.which('yay') or shutil.which('paru'), '-Qua'])]:
-                if not any(a['source']['type'] == source for a in apps):
-                    continue
-                if not argv[0] or not shutil.which(argv[0]):
-                    warnings.append(f'{source}: package helper is not installed')
-                    continue
-                p = self.command(argv, timeout=90)
-                # pacman returns 1 for no upgrades. Other failures carry stderr.
-                if p.returncode and p.stderr.strip():
-                    warnings.append(f'{source}: {p.stderr.strip()}')
-                for line in p.stdout.splitlines():
-                    fields = line.split()
-                    if len(fields) >= 4 and fields[2] == '->':
-                        updates[(source, fields[0])] = fields[3]
-            for app in apps:
-                if self.cancel.is_set():
-                    raise Cancelled()
+            for _ in range(min(RefreshRun.WORKERS, tasks.qsize())):
+                # An unresponsive network call must not keep the local server process open.
+                threading.Thread(target=check, name='launchcraft-refresh-check', daemon=True).start()
+            while pending:
                 try:
-                    if app['source']['type'] == 'github_release':
-                        release = self.github_release(app)
-                    elif app['source']['type'] == 'local':
-                        release = dict(tag='local', notes='Local user-built application.', url=app['website'], checked=time.time())
-                    else:
-                        src = app['source']
-                        version = updates.get((src['type'], src['package']))
-                        if not version and src['type'] == 'arch_repo':
-                            p = self.command(['pacman', '-Si', src['package']])
-                            m = re.search(r'^Version\s*:\s*(\S+)', p.stdout, re.M)
-                            version = m[1] if m else None
-                        elif not version and src['type'] == 'winget' and IS_WIN and shutil.which('winget'):
-                            p = self.command(['winget', 'show', '--id', src['package'], '-e', '--accept-source-agreements'], timeout=20)
-                            m = re.search(r'^Version:\s*(\S+)', p.stdout, re.M)
-                            version = m[1] if m else None
-                        release = dict(tag=version or self.installed(app), notes='Package updates use the configured package databases.', url=app['website'], checked=time.time())
-                    with self.lock:
-                        self.state['releases'][app['id']] = release
-                    if release.get('warning'):
-                        if 'GitHub rate limited' in release['warning']:
-                            rate_limited.append(app['name'])
-                            if 'Asset metadata unavailable' in release['warning']:
-                                warnings.append(f'{app["name"]}: {release["warning"]}')
-                        else:
-                            warnings.append(f'{app["name"]}: {release["warning"]}')
-                except Cancelled:
-                    raise
-                except Exception as e:
-                    warnings.append(f'{app["name"]}: {e}')
+                    wait = min(.1, run.remaining())
+                    group, found, issues = results.get(timeout=wait)
+                except queue.Empty:
+                    continue
+                except TimeoutError:
+                    warnings.insert(0, f'Refresh timed out on {len(pending)} of {len(apps)} app checks; kept cached results.')
+                    break
+                warnings.extend(issues)
+                releases.update(found)
+                for app in group:
+                    del pending[app['id']]
+                    warning = found.get(app['id'], {}).get('warning')
+                    if warning and 'GitHub rate limited' in warning:
+                        rate_limited += 1
+                        if 'Asset metadata unavailable' not in warning:
+                            continue
+                    if warning:
+                        warnings.append(f'{app["name"]}: {warning}')
+                self.emit('refresh-progress', dict(completed=len(apps) - len(pending), total=len(apps)))
+            if self.cancel.is_set():
+                raise Cancelled()
             if rate_limited:
-                warnings.insert(0, f'GitHub API rate limit reached ({len(rate_limited)} apps); versions fetched via release redirects.')
-            self.save()
-            self.notice = 'Refresh complete' if not warnings else 'Refresh complete with warnings'
+                warnings.insert(0, f'GitHub API rate limit reached ({rate_limited} apps); versions fetched via release redirects.')
+            current_sources = {app['id']: app['source'] for app in self.catalog.load()['apps']}
+            with self.lock:
+                run.done.set()
+                self.state['http'].update(run.http_updates)
+                for app in apps:
+                    app_id = app['id']
+                    if app_id in releases and app['source'] == current_sources.get(app_id):
+                        self._record_release(app, releases[app_id])
+                self.save()
+                self.warnings = warnings
+                self.notice = 'Refresh complete' if not warnings else 'Refresh complete with warnings'
         finally:
-            self.warnings = warnings
-            self.refreshing = False
+            run.done.set()
 
     def start(self, action, ids=None, clean=False, allow_build=False):
         terminal = ('Complete', 'Cancelled', 'Error')
@@ -1669,7 +1973,8 @@ class Engine:
                 else:
                     self.install_many(ids, allow_build=allow_build)
             except Cancelled:
-                self.notice = 'Cancelled. Partial downloads are kept for resume.'
+                self.notice = ('Refresh cancelled' if action == 'refresh' else
+                               'Cancelled. Partial downloads are kept for resume.')
             except Exception as e:
                 self.notice = str(e)
                 self.last_error = str(e)
@@ -1688,7 +1993,8 @@ class Engine:
         if action == 'refresh':
             self.worker = worker
         worker.start()
-        self.emit('state', self.snapshot())
+        if action != 'refresh':
+            self.emit('state', self.snapshot())
 
     def download(self, asset, checksum=None, appid='', cancel=None):
         cancel = cancel or self.cancel
@@ -1866,11 +2172,13 @@ class Engine:
                 if self.cancel.is_set():
                     raise Cancelled()
                 if app['source']['type'] == 'github_release':
-                    release = self.state['releases'].get(appid)
+                    with self.lock:
+                        release = self.cached_release(app)
                     if not release or not release.get('asset'):
                         release = self.github_release(app)
-                        self.state['releases'][appid] = release
-                        self.save()
+                        with self.lock:
+                            self._record_release(app, release)
+                            self.save()
                     if not release.get('asset'):
                         raise ValueError(f'{app["name"]}: asset metadata unavailable; refresh after GitHub rate limit resets')
                     path, verification = self.download(release['asset'], release.get('checksum'), appid)
@@ -2230,6 +2538,7 @@ class Server(http.server.ThreadingHTTPServer):
         super().__init__(('127.0.0.1', port), Handler)
         self.engine = engine
         self.token = secrets.token_urlsafe(32)
+        self.instance_id = secrets.token_hex(16)
         self.origin = f'http://127.0.0.1:{self.server_port}'
         self.grace, self.startup_timeout = grace, startup_timeout
         self.last_client = time.monotonic()
@@ -2240,7 +2549,7 @@ class Server(http.server.ThreadingHTTPServer):
     def monitor(self):
         while not self.stopping.wait(.2):
             with self.lifecycle, self.engine.lock:
-                if self.engine.listeners or (self.engine.busy and not self.engine.refreshing):
+                if self.engine.listeners or self.engine.ai_running or (self.engine.busy and not self.engine.refreshing):
                     self.last_client = time.monotonic()
                     continue
                 limit = self.grace if self.ever_connected else self.startup_timeout
@@ -2288,6 +2597,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
         path = urllib.parse.urlparse(self.path).path
         if path == '/events':
             self.events()
+        elif path == '/api/instance':
+            with self.server.lifecycle:
+                if self.server.stopping.is_set():
+                    self.json(503, {'error': 'Server closing'})
+                    return
+                # Give the newly opened desktop window time to establish its SSE stream.
+                self.server.ever_connected = False
+                self.server.last_client = time.monotonic()
+                self.json(200, {'instance': self.server.instance_id})
         elif path == '/api/state':
             try:
                 self.json(200, dict(self.server.engine.snapshot(), token=self.server.token))
@@ -2412,11 +2730,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 provider = str(data.get('provider', 'openai')).strip().lower()
                 if provider not in ('openai', 'anthropic', 'gemini', 'openrouter', 'custom', 'subscription'):
                     raise ValueError('Unsupported AI provider')
-                if 'api_key' in data and str(data['api_key']).strip():
-                    engine.save_ai_key(provider, str(data['api_key']).strip(), str(data.get('key_label', '')))
-                elif data.get('key_id'):
-                    engine.select_ai_key(provider, str(data['key_id']).strip())
-                models = engine.fetch_ai_models(provider, str(data.get('api_key', '')), str(data.get('base_url', '')))
+                key = str(data.get('api_key', '')).strip()
+                if not key and data.get('key_id'):
+                    with engine.lock:
+                        entries = engine._ensure_key_profiles(provider)
+                        selected = next((e for e in entries if e['id'] == data['key_id']), None)
+                        if not selected:
+                            raise ValueError('API key not found')
+                        key = selected['key']
+                models = engine.fetch_ai_models(provider, key, str(data.get('base_url', '')))
                 self.json(200, {'models': models, 'ai_models': engine.state.get('ai_models', {})})
                 return
             elif path == '/api/ai_maintain':
@@ -2437,12 +2759,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     prefs['ai_provider'] = provider
                     prefs['ai_thinking'] = thinking
                     if model:
-                        prefs.setdefault('ai_selected_models', {})[provider] = model[:200]
+                        model_key = f'subscription:{base_url}' if provider == 'subscription' and base_url else provider
+                        prefs.setdefault('ai_selected_models', {})[model_key] = model[:200]
                     if provider == 'custom' and base_url:
                         prefs['ai_base_url'] = base_url[:300]
                     engine.save()
                 engine.ai_maintain(prompt=str(data.get('prompt', '')), model=model, provider=provider, base_url=base_url, thinking=thinking)
-                self.json(200, engine.snapshot())
+                self.json(200, engine.ai_state())
                 return
             elif path == '/api/ai_terminal':
                 provider = str(data.get('provider', 'openai')).strip().lower()
@@ -2460,15 +2783,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     base_url=str(data.get('base_url', '')).strip(),
                     thinking=thinking,
                 )
-                self.json(200, engine.snapshot())
+                self.json(200, engine.ai_state())
                 return
             elif path == '/api/ai_fix':
                 engine.run_pending_fix(str(data.get('id', '')).strip())
-                self.json(200, engine.snapshot())
+                self.json(200, engine.ai_state())
                 return
             elif path == '/api/ai_cancel':
                 engine.cancel_ai()
-                self.json(200, engine.snapshot())
+                self.json(200, engine.ai_state())
                 return
             elif path == '/api/install':
                 ids = data.get('ids')
@@ -2538,8 +2861,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         cur = prefs.setdefault('ai_selected_models', {})
                         for k, v in sm.items():
                             kp = str(k).strip().lower()
-                            if kp in ('openai', 'anthropic', 'gemini', 'openrouter', 'custom') and isinstance(v, str) and v.strip():
-                                cur[kp] = v.strip()[:200]
+                            if kp in ('openai', 'anthropic', 'gemini', 'openrouter', 'custom', 'subscription',
+                                      'subscription:opencode', 'subscription:codex', 'subscription:claude', 'subscription:gemini') and isinstance(v, str):
+                                if v.strip():
+                                    cur[kp] = v.strip()[:200]
+                                else:
+                                    cur.pop(kp, None)
                     engine.save()
                 self.json(200, {'ok': True})
                 return
@@ -2635,6 +2962,44 @@ def find_browser():
     return next((shutil.which(x) for x in ('chromium', 'chromium-browser', 'google-chrome', 'brave') if shutil.which(x)), None)
 
 
+def desktop_server(engine, grace, startup_timeout):
+    # A desktop launch must reconnect to the worker that owns an active job.
+    # The OS releases the lock on exit, including after a crash.
+    key = engine.catalog_key
+    engine.data.mkdir(parents=True, exist_ok=True)
+    lock = (engine.data / f'desktop-{key}.lock').open('a+b')
+    endpoint = engine.data / f'desktop-{key}.json'
+    deadline = time.monotonic() + 8
+    try:
+        while True:
+            try:
+                if fcntl is not None:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                else:
+                    lock.seek(0)
+                    msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+            except (BlockingIOError, PermissionError):
+                try:
+                    record = json.loads(endpoint.read_text())
+                    origin = f"http://127.0.0.1:{int(record['port'])}"
+                    with urllib.request.urlopen(origin + '/api/instance', timeout=.5) as response:
+                        if json.load(response)['instance'] == record['instance']:
+                            lock.close()
+                            return None, origin, None
+                except (OSError, ValueError, KeyError):
+                    pass
+                if time.monotonic() >= deadline:
+                    raise ValueError('The running launcher did not respond when reopening its window')
+                time.sleep(.1)
+                continue
+            server = Server(engine, 0, grace, startup_timeout)
+            atomic_json(endpoint, {'instance': server.instance_id, 'port': server.server_port})
+            return server, server.origin, lock
+    except BaseException:
+        lock.close()
+        raise
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--port', type=int, default=0)
@@ -2648,28 +3013,44 @@ def main():
     try:
         engine = Engine(args.catalog)
         engine.catalog.load()
-        server = Server(engine, args.port, max(.1, args.grace), max(.1, args.startup_timeout))
+        grace = max(.1, args.grace)
+        startup_timeout = max(.1, args.startup_timeout)
+        desktop_lock = None
+        if args.no_browser or args.port:
+            server = Server(engine, args.port, grace, startup_timeout)
+            origin = server.origin
+        else:
+            server, origin, desktop_lock = desktop_server(engine, grace, startup_timeout)
     except (OSError, ValueError) as e:
         parser.exit(1, f'Armin Launcher: {e}\n')
-    print(server.origin, flush=True)
+    print(origin, flush=True)
     if not args.no_browser:
         ensure_home_menu_shortcut()
         browser = find_browser()
         if browser:
             kw = {'creationflags': subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP} if IS_WIN else {'start_new_session': True}
-            argv = [browser, '--app=' + server.origin] + ([] if IS_WIN else ['--class=LaunchCraft'])
+            argv = [browser, '--app=' + origin] + ([] if IS_WIN else ['--class=LaunchCraft'])
             subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **kw)
         elif IS_WIN:
-            webbrowser.open(server.origin)
+            webbrowser.open(origin)
         else:
-            server.server_close()
+            if server:
+                server.server_close()
             parser.exit(1, 'Armin Launcher: install a Chromium browser or use --no-browser\n')
+    if server is None:
+        return 0
+
     def stop(signum, frame):
         engine.cancel.set()
+        engine.cancel_ai()
         server.stopping.set()
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
-    server.run()
+    try:
+        server.run()
+    finally:
+        if desktop_lock:
+            desktop_lock.close()
     if engine.worker:
         engine.worker.join(timeout=.5 if engine.worker.daemon else None)
     return 0

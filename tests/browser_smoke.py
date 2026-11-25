@@ -105,7 +105,21 @@ def main():
         catalog = home / 'catalog.json'
         shutil.copyfile(ROOT / 'catalog.json', catalog)
         initial = json.loads(catalog.read_text())
-        env = dict(os.environ, HOME=tmp)
+        codex = home / 'codex'
+        codex.write_text(f'#!{sys.executable}\n' + r"""import json
+import sys
+import time
+
+prompt = sys.stdin.read()
+sys.stderr.write('Codex diagnostic output\n' * 5000)
+sys.stderr.flush()
+time.sleep(30 if 'stop this job' in prompt else 1.2)
+print(json.dumps({'reply': 'Launcher check complete.'}))
+""")
+        codex.chmod(0o755)
+        env = dict(os.environ, HOME=tmp, PATH=f'{home}{os.pathsep}{os.environ["PATH"]}')
+        for variable in ('OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'OPENROUTER_API_KEY'):
+            env.pop(variable, None)
         server = subprocess.Popen([sys.executable, str(ROOT / 'launcher.py'), '--no-browser', '--catalog', str(catalog), '--startup-timeout', '30', '--grace', '.3'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
         browser = None
         try:
@@ -202,12 +216,52 @@ def main():
             assert cdp.evaluate("document.querySelector('#modal-title').textContent") == 'Browser Test'
             click('#modal-close')
             click('[data-filter=all]')
+            click('#ai-maintain')
+            assert cdp.evaluate("!document.querySelector('#ai-panel').hidden && !document.querySelector('#modal').open")
+            assert cdp.evaluate("document.querySelector('#ai-connection').textContent === 'Codex (ChatGPT)'")
+            assert cdp.evaluate("""(() => {
+                const refresh = document.querySelector('#refresh');
+                const {x, y, width, height} = refresh.getBoundingClientRect();
+                return refresh.contains(document.elementFromPoint(x + width / 2, y + height / 2));
+            })()"""), 'AI panel covers Refresh in desktop layout'
+            cdp.evaluate("document.querySelector('#ai-input').value='Check my apps'; document.querySelector('#ai-input').dispatchEvent(new Event('input'))")
+            click('#ai-send')
+            cdp.until("state.ai_running && !document.querySelector('#ai-stop').hidden")
+            click('#ai-hide')
+            assert cdp.evaluate("document.querySelector('#ai-panel').hidden && state.ai_running")
+            click('[data-filter=installed]')
+            assert cdp.evaluate("document.querySelector('[data-filter=installed]').getAttribute('aria-pressed') === 'true'")
+            cdp.until("!state.ai_running && state.ai_outcome === 'complete'")
+            click('#ai-maintain')
+            assert 'AI: Launcher check complete.' in cdp.evaluate("document.querySelector('#ai-log').textContent")
+            screenshot = cdp.call('Page.captureScreenshot', dict(format='png', captureBeyondViewport=False))
+            (output / 'ai.png').write_bytes(base64.b64decode(screenshot['data']))
+            cdp.evaluate("document.querySelector('#ai-input').value='stop this job'; document.querySelector('#ai-input').dispatchEvent(new Event('input'))")
+            click('#ai-send')
+            cdp.until("document.querySelector('#ai-status').textContent.includes('Waiting')")
+            click('#ai-stop')
+            cdp.until("!state.ai_running && state.ai_outcome === 'cancelled'")
+            click('[data-ai-mode=maintain]')
+            assert cdp.evaluate("!document.querySelector('#ai-send').disabled && document.querySelector('#ai-input').value === ''")
+            click('#ai-hide')
+            click('[data-filter=all]')
             screenshot = cdp.call('Page.captureScreenshot', dict(format='png', captureBeyondViewport=False))
             (output / 'grid.png').write_bytes(base64.b64decode(screenshot['data']))
             cdp.call('Emulation.setDeviceMetricsOverride', dict(width=520, height=900, deviceScaleFactor=1, mobile=False))
             assert cdp.evaluate('document.documentElement.scrollWidth <= window.innerWidth'), 'mobile layout overflow'
             screenshot = cdp.call('Page.captureScreenshot', dict(format='png', captureBeyondViewport=False))
             (output / 'mobile.png').write_bytes(base64.b64decode(screenshot['data']))
+            cdp.call('Emulation.setDeviceMetricsOverride', dict(width=360, height=640, deviceScaleFactor=1, mobile=False))
+            click('#ai-maintain')
+            click('#ai-settings-toggle')
+            assert cdp.evaluate("""(() => {
+                const send = document.querySelector('#ai-send').getBoundingClientRect();
+                return send.right <= innerWidth && send.bottom <= innerHeight;
+            })()"""), 'AI composer overflow'
+            click('#ai-hide')
+            atomic_json(catalog, {'version': 1, 'apps': [a for a in initial['apps'] if a['source']['type'] == 'local']})
+            click('#refresh')
+            cdp.until("state.notice === 'Refresh complete' && !document.querySelector('#refresh').disabled")
             assert not cdp.errors, cdp.errors
             cdp.call('Page.navigate', dict(url='about:blank'))
             server.wait(timeout=6)

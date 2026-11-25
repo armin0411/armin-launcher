@@ -1,6 +1,6 @@
 # Armin Launcher
 
-**Armin Launcher** is a fast, zero-dependency local software launcher and updater for **Linux and Windows** built with Python's standard library and plain HTML, CSS, and JavaScript. No pip packages, Node.js, or background daemons required — it binds only to an ephemeral `127.0.0.1` port, opens in app mode, and exits cleanly when you close the window.
+**Armin Launcher** is a fast, zero-dependency local software launcher and updater for **Linux and Windows** built with Python's standard library and plain HTML, CSS, and JavaScript. It binds to a local `127.0.0.1` port and opens in browser app mode. Active installs and AI tasks can finish in the background when you close the window.
 
 [![Download Armin Launcher](https://img.shields.io/badge/%E2%AC%87%EF%B8%8F_Download_Armin_Launcher-Latest_Release-2d81ff?style=for-the-badge&logo=github&logoColor=white)](https://github.com/armin0411/armin-launcher/archive/refs/heads/main.zip)
 
@@ -47,7 +47,8 @@ python3 launcher.py --headless-server --catalog /tmp/my-catalog.json
 ## Features
 
 - **Unified App Library** — Manage GitHub releases (`.pkg.tar.zst`, `.AppImage`, `.tar.*`), Arch repository packages, and AUR packages from one interface.
-- **On-Demand Update Checks** — No background polling; click **Refresh** when you want to check for new releases (with ETag caching and GitHub rate-limit fallback).
+- **On-demand update checks**. Click **Refresh** to check releases and package updates in parallel. If a source is slow or unavailable, the launcher keeps its cached result and reports a warning.
+- **AI Maintain**. Open the side panel to ask about an app or run catalog maintenance. Choose a signed-in subscription CLI, an API provider, or a local endpoint under **Settings**. Choose **Maintain** and leave the message blank to audit the full catalog. Hide the panel to keep browsing, or reopen the launcher to follow a running task or see its last result.
 - **Resumable, Verified Downloads** — Interrupted downloads resume via HTTP `Range` requests and are verified against publisher `SHA256SUMS` or asset digests before installation.
 - **Batch Updates** — **Update All** downloads selected release packages and applies them in a single `pkexec pacman -U` transaction.
 - **Grid & Compact Table Views** — Switch between card grid and dense table view, filter by `All`, `Installed`, `Updates`, or `Hidden`, search instantly, and toggle dark/light themes or UI zoom (`Ctrl`/`Cmd` `+`, `-`, `0`).

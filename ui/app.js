@@ -10,6 +10,9 @@ let profiles = DEFAULT_PROFILES.slice();
 let appDetails = {};
 let shownApps = [];
 let events;
+let aiRevision = 0;
+let refreshProgress = null;
+const aiFields = ['ai_running', 'ai_phase', 'ai_outcome', 'ai_report', 'pending_fixes', 'term_cwd'];
 const terminal = ['Complete', 'Cancelled', 'Error'];
 const PROFILE_ICONS = {
   github: '<svg viewBox="0 0 16 16" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>',
@@ -151,7 +154,13 @@ function openThemePicker() {
 
 function applyState(next) {
   if ((next.revision || 0) < (state.revision || 0)) return;
+  if (next.revision < aiRevision) {
+    for (const field of aiFields) next[field] = state[field];
+  } else {
+    aiRevision = next.revision || 0;
+  }
   state = next;
+  if (!state.refreshing) refreshProgress = null;
   if (!prefsLoaded && next.prefs) {
     prefsLoaded = true;
     if (next.prefs.view === 'list' || next.prefs.view === 'grid') setView(next.prefs.view, false);
@@ -166,12 +175,20 @@ function applyState(next) {
   }
   render();
 }
+function applyAiState(next) {
+  if ((next.revision || 0) < aiRevision) return;
+  aiRevision = next.revision || 0;
+  for (const field of aiFields) {
+    if (field in next) state[field] = next[field];
+  }
+  renderAi();
+}
 const pendingOps = new Map();
 function setNotice(message, error = false) {
   $('#notice-text').textContent = message;
   $('#notice').classList.toggle('error', error);
 }
-async function api(path, data = {}, {timeoutMs = 5000} = {}) {
+async function post(path, data = {}, {timeoutMs = 5000} = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -183,7 +200,6 @@ async function api(path, data = {}, {timeoutMs = 5000} = {}) {
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || 'Request failed');
-    applyState(result);
     return result;
   } catch (error) {
     if (error.name === 'AbortError') {
@@ -193,6 +209,12 @@ async function api(path, data = {}, {timeoutMs = 5000} = {}) {
   } finally {
     clearTimeout(timer);
   }
+}
+async function api(path, data, options) {
+  const result = await post(path, data, options);
+  if (Array.isArray(result.apps)) applyState(result);
+  else if ('ai_running' in result) applyAiState(result);
+  return result;
 }
 async function runAppOp(id, op, fn) {
   pendingOps.set(id, op);
@@ -399,49 +421,11 @@ function render() {
   $('#all-count').textContent = visible.length;
   $('#update-count').textContent = updates || '';
   $('#checked-info').textContent = formatCheckedAgo(state.apps);
-  $('#refresh').disabled = state.busy;
-  $('#update-all').disabled = state.busy || !updates;
-  const refreshIcon = $('#refresh-icon');
-  if (refreshIcon) refreshIcon.classList.toggle('spinning', !!state.refreshing);
-  const refreshLabel = $('#refresh span');
-  if (refreshLabel) refreshLabel.textContent = state.refreshing ? 'Refreshing…' : 'Refresh';
+  renderRefresh();
+  $('#update-all').disabled = state.busy || state.refreshing || !updates;
   $('#warnings').hidden = !state.warnings?.length;
   $('#warnings pre').textContent = (state.warnings || []).join('\n\n');
-  if (state.refreshing) setNotice('Refreshing release metadata and package updates…');
-  else if (state.ai_running) setNotice('AI Maintain running — auditing catalog and assets…');
-  else if (state.busy) setNotice('Working — keep this window open to follow progress.');
-  else setNotice(state.notice || 'Ready. Refresh to check the latest releases.', !!state.last_error);
-  const aiLog = $('#ai-log');
-  if (aiLog) {
-    const text = state.ai_report || 'Ready. Type a message for the AI or !command to run locally (help, clear, cd, ls…).';
-    const atBottom = aiLog.scrollHeight - aiLog.scrollTop - aiLog.clientHeight < 24;
-    if (aiLog.textContent !== text) {
-      aiLog.textContent = text;
-      if (state.ai_running || atBottom) aiLog.scrollTop = aiLog.scrollHeight;
-    }
-  }
-  const aiWorking = $('#ai-working');
-  if (aiWorking) {
-    const hasErr = /(^|\n)Error:/i.test(state.ai_report || '');
-    aiWorking.hidden = !state.ai_running || hasErr;
-  }
-  const aiFixes = $('#ai-fixes');
-  if (aiFixes) {
-    const fixes = state.pending_fixes || [];
-    aiFixes.hidden = !fixes.length;
-    aiFixes.innerHTML = fixes.map(f => `<div class="ai-fix-row"><div class="ai-fix-meta"><strong>${escapeHTML(f.title)}</strong><code>${escapeHTML(f.cmd)}</code></div><button type="button" class="${f.needs_admin ? 'danger-btn' : 'primary'}" data-fix-id="${escapeHTML(f.id)}" data-admin="${f.needs_admin ? '1' : '0'}" ${state.ai_running ? 'disabled' : ''}>${f.needs_admin ? 'Run (Admin)' : 'Run Fix'}</button></div>`).join('');
-  }
-  const termInput = $('#ai-term-input');
-  if (termInput && state.term_cwd) {
-    termInput.title = 'Working directory: ' + state.term_cwd;
-  }
-  const aiBtn = $('#ai-maintain');
-  if (aiBtn) {
-    aiBtn.disabled = false;
-    aiBtn.textContent = state.ai_running ? '✦ AI Running…' : '✦ AI Maintain';
-  }
-  const aiSubmit = $('#ai-form button[type=submit]');
-  if (aiSubmit) aiSubmit.disabled = !!state.ai_running;
+  renderAi();
   renderApps();
 }
 function showModal(title, content, wide = false) {
@@ -451,7 +435,6 @@ function showModal(title, content, wide = false) {
   else $('#modal-body').append(content);
   $('#modal').classList.toggle('add-modal', !!$('#add-form'));
   $('#modal').classList.toggle('details-modal', !!wide);
-  $('#modal').classList.toggle('ai-modal', !!$('#ai-form'));
   if (!$('#modal').open) $('#modal').showModal();
 }
 function details(a) {
@@ -696,11 +679,11 @@ function closeMenus() {
 document.addEventListener('click', event => {if (!event.target.closest('.menu-wrap')) closeMenus();});
 document.addEventListener('mousedown', event => {
   if ($('#modal').open || $('#lightbox').open || document.activeElement !== $('#search')) return;
-  if (!event.target.closest('input, select, textarea, a, #modal, #lightbox')) event.preventDefault();
+  if (!event.target.closest('input, select, textarea, a, #modal, #lightbox, #ai-panel')) event.preventDefault();
 });
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape') closeMenus();
-  if (!event.ctrlKey && !event.metaKey && !event.altKey && !$('#modal').open && !$('#lightbox').open && (event.key.length === 1 || event.key === 'Backspace') && !event.target.closest('input, select, textarea, #modal, #lightbox')) {
+  if (!event.ctrlKey && !event.metaKey && !event.altKey && !$('#modal').open && !$('#lightbox').open && (event.key.length === 1 || event.key === 'Backspace') && !event.target.closest('input, select, textarea, #modal, #lightbox, #ai-panel')) {
     $('#search').focus({preventScroll: true});
   }
   if (!event.ctrlKey && !event.metaKey) return;
@@ -792,305 +775,375 @@ $('#lightbox-stage').addEventListener('wheel', event => {
 $('#lightbox').addEventListener('click', event => {
   if (event.target === $('#lightbox') || event.target === $('#lightbox-stage')) $('#lightbox').close();
 });
+let refreshRequest = false;
+function renderRefresh() {
+  const checking = refreshRequest || state.refreshing || !!refreshProgress;
+  const button = $('#refresh');
+  button.disabled = state.busy || checking;
+  $('#refresh-icon').classList.toggle('spinning', !!checking);
+  $('span', button).textContent = checking ? 'Checking…' : 'Refresh';
+  if (checking) {
+    const progress = refreshProgress;
+    setNotice(progress?.total
+      ? `Checking for updates (${progress.completed} of ${progress.total} apps)…`
+      : 'Checking for updates…');
+  } else if (state.busy) {
+    setNotice('Working — keep this window open to follow progress.');
+  } else {
+    setNotice(state.notice || 'Ready. Refresh to check for updates.', !!state.last_error);
+  }
+}
 $('#refresh').onclick = async () => {
-  const btn = $('#refresh');
-  const label = $('span', btn);
-  const prevText = label ? label.textContent : 'Refresh';
-  btn.disabled = true;
-  if (label) label.textContent = 'Refreshing…';
-  $('#refresh-icon')?.classList.add('spinning');
+  refreshRequest = true;
+  renderRefresh();
+  let error = '';
   try {
     await api('refresh');
-  } catch (e) {
-    setNotice(e.message, true);
+  } catch (err) {
+    error = err.message;
   } finally {
-    if (!state.refreshing) {
-      btn.disabled = false;
-      if (label) label.textContent = prevText;
-      $('#refresh-icon')?.classList.remove('spinning');
-    }
+    refreshRequest = false;
+    renderRefresh();
+    if (error && !state.refreshing) setNotice(error, true);
   }
 };
-function loadAiPrefs() {
-  let local = {};
-  try { local = JSON.parse(localStorage.getItem('launchcraft-ai-prefs') || '{}') || {}; } catch {}
-  const sp = state.prefs || {};
-  return {
-    ai_provider: sp.ai_provider || local.ai_provider || 'openai',
-    ai_base_url: sp.ai_base_url ?? local.ai_base_url ?? '',
-    ai_sub_cli: sp.ai_sub_cli || local.ai_sub_cli || 'opencode',
-    ai_thinking: sp.ai_thinking || local.ai_thinking || 'auto',
-    ai_selected_models: {...(local.ai_selected_models || {}), ...(sp.ai_selected_models || {})},
-  };
+
+const aiPanel = $('#ai-panel');
+const aiSettings = $('#ai-settings');
+const aiSettingsFields = aiSettings.elements;
+const aiComposer = $('#ai-composer');
+const aiInput = $('#ai-input');
+const aiOutput = $('#ai-output');
+const aiLog = $('#ai-log');
+const aiProvider = () => aiSettingsFields.provider.value;
+const aiCli = () => aiSettingsFields.sub_cli.value;
+const aiModelScope = () => aiProvider() === 'subscription' ? `subscription:${aiCli()}` : aiProvider();
+let aiReady = false;
+let aiRequest = false;
+let aiMode = 'ask';
+let aiModels = {};
+let aiSelectedModels = {};
+let aiModelRequest = 0;
+let aiRenderedFixes = '';
+
+function setAiError(message = '') {
+  const error = $('#ai-error');
+  error.textContent = message;
+  error.hidden = !message;
 }
-function persistAiPrefs(patch) {
-  const cur = loadAiPrefs();
-  const next = {
-    ai_provider: patch.ai_provider ?? cur.ai_provider,
-    ai_base_url: patch.ai_base_url ?? cur.ai_base_url,
-    ai_sub_cli: patch.ai_sub_cli ?? cur.ai_sub_cli,
-    ai_thinking: patch.ai_thinking ?? cur.ai_thinking,
-    ai_selected_models: {...cur.ai_selected_models, ...(patch.ai_selected_models || {})},
-  };
-  try { localStorage.setItem('launchcraft-ai-prefs', JSON.stringify(next)); } catch {}
-  state.prefs = {...(state.prefs || {}), ...next};
-  savePref(next);
+
+function renderAi() {
+  const running = !!state.ai_running;
+  const report = state.ai_report || '';
+  const outcome = state.ai_outcome || '';
+  const unavailable = !token || aiRequest || running;
+  const status = running
+    ? state.ai_phase || 'Working…'
+    : ({complete: 'Complete', error: 'Needs attention', cancelled: 'Stopped'}[outcome] || (aiRequest ? 'Starting…' : 'Ready'));
+  const indicator = $('.ai-toolbar-dot');
+  indicator.hidden = !running && !outcome;
+  indicator.dataset.status = running ? 'running' : outcome;
+  $('#ai-maintain').title = running || outcome ? `AI Maintain · ${status}` : 'Open AI Maintain';
+  const statusLabel = $('#ai-status');
+  if (statusLabel.textContent !== status) statusLabel.textContent = status;
+  statusLabel.dataset.status = running ? 'running' : outcome;
+  $('#ai-stop').hidden = !running;
+  $('#ai-stop').disabled = aiRequest || /^stopping/i.test(status);
+  $('#ai-clear').disabled = unavailable || !report;
+  $('#ai-send').disabled = unavailable || (aiMode === 'ask' && !aiInput.value.trim());
+  $('#ai-empty').hidden = !!report;
+  aiLog.hidden = !report;
+  if (aiLog.textContent !== report) {
+    const atBottom = aiOutput.scrollHeight - aiOutput.scrollTop - aiOutput.clientHeight < 28;
+    aiLog.textContent = report;
+    if (atBottom) aiOutput.scrollTop = aiOutput.scrollHeight;
+  }
+  if (state.term_cwd) aiInput.title = `Local commands run in ${state.term_cwd}`;
+  const fixes = state.pending_fixes || [];
+  const signature = JSON.stringify(fixes);
+  const fixList = $('#ai-fixes');
+  fixList.hidden = !fixes.length;
+  if (signature !== aiRenderedFixes) {
+    aiRenderedFixes = signature;
+    fixList.innerHTML = fixes.map(f => `<div class="ai-fix-row">
+      <div><strong>${escapeHTML(f.title)}</strong><code>${escapeHTML(f.cmd)}</code></div>
+      <button type="button" data-fix-id="${escapeHTML(f.id)}" data-admin="${f.needs_admin ? '1' : '0'}">${f.needs_admin ? 'Run as admin' : 'Run fix'}</button>
+    </div>`).join('');
+  }
+  $$('button', fixList).forEach(button => {button.disabled = unavailable;});
 }
-function openAiMaintain() {
-  const defaults = {
-    openai: {models: ['gpt-4.1-mini', 'gpt-4.1', 'gpt-4o-mini', 'gpt-4o', 'o4-mini'], placeholder: 'sk-...'},
-    anthropic: {models: ['claude-3-5-haiku-latest', 'claude-sonnet-4-20250514', 'claude-3-7-sonnet-latest'], placeholder: 'sk-ant-...'},
-    gemini: {models: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'], placeholder: 'AIza...'},
-    openrouter: {models: ['openai/gpt-4o-mini', 'anthropic/claude-3.5-sonnet', 'google/gemini-2.5-flash'], placeholder: 'sk-or-...'},
-    custom: {models: ['llama3.2', 'qwen2.5', 'mistral'], placeholder: 'Optional for local (e.g. Ollama)'},
-    subscription: {models: ['gpt-5.4', 'sonnet', 'gemini-2.5-pro', 'gemini-2.5-flash'], placeholder: ''},
-  };
-  showModal('AI Maintain (Hybrid)', `<p class="muted" style="margin:0 0 14px">Python gathers live GitHub/AUR release facts, checks local icons/screenshots and app launchability, then your chosen AI proposes validated updates or fixes.</p><form id="ai-form" class="form-grid"><label><span class="field-label">AI Provider</span><select name="provider"><option value="openai">OpenAI (ChatGPT)</option><option value="anthropic">Anthropic (Claude)</option><option value="gemini">Google Gemini</option><option value="openrouter">OpenRouter</option><option value="subscription">Subscription Account (OpenCode / Codex / Claude / Gemini)</option><option value="custom">Custom / Local (Ollama, etc.)</option></select></label><label><span class="field-label">Model <span class="field-hint" id="ai-model-hint">(auto-updates)</span></span><select name="model_select"></select></label><label class="full" id="ai-custom-model-wrap" hidden><span class="field-label">Custom Model Name</span><input name="model_custom" placeholder="Enter exact model ID"></label><label class="full" id="ai-sub-wrap" hidden><span class="field-label">Subscription CLI <span class="field-hint">(uses your logged-in ChatGPT / Claude / Gemini subscription)</span></span><div class="ai-key-row"><select name="sub_cli"><option value="opencode">OpenCode (opencode)</option><option value="codex">Codex / ChatGPT Plus (codex)</option><option value="claude">Claude Code (claude)</option><option value="gemini">Gemini CLI (gemini)</option></select><button type="button" id="ai-sub-login">Sign in…</button></div></label><label class="full" id="ai-base-wrap" hidden><span class="field-label">Base URL <span class="field-hint">(e.g. http://localhost:11434/v1)</span></span><input name="base_url" placeholder="http://localhost:11434/v1"></label><label class="full" id="ai-key-wrap"><span class="field-label">API Key <span class="field-hint" id="ai-key-hint"></span></span><div class="ai-key-row"><select name="key_select"></select><button type="button" id="ai-key-delete" title="Remove selected saved key">Remove</button></div></label><div class="full ai-new-key-grid" id="ai-new-key-wrap" hidden><label><span class="field-label">New API Key</span><input name="api_key" type="password" placeholder="sk-..."></label><label><span class="field-label">Label <span class="field-hint">(optional)</span></span><div class="ai-key-row"><input name="key_label" placeholder="e.g. Work, Personal"><button type="button" id="ai-key-save">Save Key</button></div></label></div><label><span class="field-label">Thinking Level</span><select name="thinking"><option value="auto">Auto (Default)</option><option value="low">Low (Fast / Cheap)</option><option value="medium">Medium</option><option value="high">High (Deep)</option></select></label><label><span class="field-label">App to add or check <span class="field-hint">(optional)</span></span><input name="prompt" placeholder="Leave blank for full audit, or e.g. Zed"></label><div class="modal-actions full"><button type="button" id="ai-refresh-models">Refresh Models</button><button type="button" id="ai-cancel">Close</button><button type="submit" class="primary">Run AI Maintain</button></div></form><div class="ai-terminal"><pre id="ai-log" class="release-notes">${escapeHTML(state.ai_report || 'Ready. Type a message for the AI or !command to run locally (help, clear, cd, ls…).')}</pre><div id="ai-working" class="ai-working" hidden><span class="ai-working-left"><span class="ai-working-dot" aria-hidden="true"></span><span class="ai-working-text">Working…</span></span><button type="button" id="ai-stop" class="ai-stop">Stop</button></div><div id="ai-fixes" class="ai-fixes" hidden></div><form id="ai-term-bar" class="ai-term-bar"><span class="ai-term-prompt" aria-hidden="true">&gt;</span><input id="ai-term-input" autocomplete="off" placeholder="Ask the AI, or run !cmd (help, clear, cd, ls, sudo…)"><button type="submit" id="ai-term-send">Send</button><button type="button" id="ai-term-clear" title="Clear terminal (Ctrl+L)">Clear</button></form></div>`);
-  const form = $('#ai-form');
-  const aiPrefs = loadAiPrefs();
-  if (defaults[aiPrefs.ai_provider]) form.elements.provider.value = aiPrefs.ai_provider;
-  if (aiPrefs.ai_base_url) form.elements.base_url.value = aiPrefs.ai_base_url;
-  if (aiPrefs.ai_sub_cli) form.elements.sub_cli.value = aiPrefs.ai_sub_cli;
-  if (['auto', 'low', 'medium', 'high'].includes(aiPrefs.ai_thinking)) form.elements.thinking.value = aiPrefs.ai_thinking;
-  const populateModels = (provider, list, useRemembered = false) => {
-    const sel = form.elements.model_select;
-    const remembered = loadAiPrefs().ai_selected_models?.[provider] || '';
-    const prev = useRemembered ? remembered : (sel.value || remembered);
-    const items = (Array.isArray(list) && list.length) ? list : (defaults[provider]?.models || ['gpt-4o-mini']);
-    sel.innerHTML = items.map(m => `<option value="${escapeHTML(m)}">${escapeHTML(m)}</option>`).join('') + '<option value="__custom__">Custom model…</option>';
-    if (prev && items.includes(prev)) {
-      sel.value = prev;
-    } else if (prev && prev !== '__custom__' && (useRemembered || sel.value === '__custom__')) {
-      sel.value = '__custom__';
-      form.elements.model_custom.value = prev;
-    }
-    const isCustom = sel.value === '__custom__';
-    $('#ai-custom-model-wrap').hidden = !isCustom;
-    form.elements.model_custom.required = isCustom;
-  };
-  const saveCurrentModel = () => {
-    const p = form.elements.provider.value;
-    const m = form.elements.model_select.value === '__custom__' ? form.elements.model_custom.value.trim() : form.elements.model_select.value;
-    if (m) persistAiPrefs({ai_provider: p, ai_selected_models: {[p]: m}});
-  };
-  const populateKeys = (provider) => {
-    const sel = form.elements.key_select;
-    const list = state.ai_key_profiles?.[provider] || [];
-    const activeId = state.ai_active_keys?.[provider] || '';
-    const cfg = defaults[provider] || defaults.openai;
-    sel.innerHTML = list.map(k => `<option value="${escapeHTML(k.id)}">${escapeHTML(k.label)}</option>`).join('') + '<option value="__new__">+ Add new API key…</option>';
-    if (activeId && list.some(k => k.id === activeId)) {
-      sel.value = activeId;
-    } else if (list.length) {
-      sel.value = list[0].id;
-    } else {
-      sel.value = '__new__';
-    }
-    const isNew = sel.value === '__new__';
-    $('#ai-new-key-wrap').hidden = !isNew;
-    $('#ai-key-delete').hidden = isNew || !list.length;
-    form.elements.api_key.placeholder = cfg.placeholder;
-    $('#ai-key-hint').textContent = list.length ? `(${list.length} saved locally)` : provider === 'custom' ? '(optional for local endpoints)' : '(stored locally only)';
-  };
-  const effectiveBase = (p) => p === 'subscription' ? form.elements.sub_cli.value : form.elements.base_url.value.trim();
-  const refreshModels = async (silent = true) => {
-    const p = form.elements.provider.value;
-    const key = p === 'subscription' ? '' : (form.elements.key_select.value === '__new__' ? form.elements.api_key.value.trim() : '');
-    const keyId = p === 'subscription' ? '' : (form.elements.key_select.value !== '__new__' ? form.elements.key_select.value : '');
-    const keyLabel = form.elements.key_label.value.trim();
-    const base = effectiveBase(p);
-    if (!silent) $('#ai-model-hint').textContent = '(refreshing…)';
-    try {
-      const res = await fetch('/api/ai_models', {method: 'POST', headers: {'Content-Type':'application/json', 'X-LaunchCraft-Token': token}, body: JSON.stringify({provider: p, api_key: key, key_id: keyId, key_label: keyLabel, base_url: base})});
-      const data = await res.json();
-      if (res.ok && data.models?.length) {
-        state.ai_models = data.ai_models || state.ai_models;
-        populateModels(p, data.models, false);
-        $('#ai-model-hint').textContent = `(${data.models.length} live)`;
-      } else if (!silent) {
-        $('#ai-model-hint').textContent = '(using defaults)';
-      }
-    } catch {
-      if (!silent) $('#ai-model-hint').textContent = '(using defaults)';
-    }
-  };
-  const cachedModelsFor = (p) => p === 'subscription'
-    ? (state.ai_models?.[`subscription:${form.elements.sub_cli.value}`] || state.ai_models?.subscription)
-    : state.ai_models?.[p];
-  const syncProvider = () => {
-    const p = form.elements.provider.value;
-    const isSub = p === 'subscription';
-    const saved = !!(state.ai_keys && state.ai_keys[p]);
-    const cached = cachedModelsFor(p);
-    populateModels(p, cached, true);
-    $('#ai-sub-wrap').hidden = !isSub;
-    $('#ai-key-wrap').hidden = isSub;
-    if (isSub) $('#ai-new-key-wrap').hidden = true;
-    else populateKeys(p);
-    $('#ai-base-wrap').hidden = p !== 'custom';
-    $('#ai-model-hint').textContent = cached?.length ? `(${cached.length} cached)` : '(defaults)';
-    if (saved || p === 'custom' || isSub) refreshModels(true);
-  };
-  form.elements.sub_cli.onchange = () => {
-    persistAiPrefs({ai_sub_cli: form.elements.sub_cli.value});
-    populateModels('subscription', cachedModelsFor('subscription'), true);
-    refreshModels(false);
-  };
-  $('#ai-sub-login').onclick = async () => {
-    try {
-      await api('ai_sub_login', {cli: form.elements.sub_cli.value});
-      setNotice(`Opened ${form.elements.sub_cli.value} login in your terminal.`);
-    } catch (err) {
-      setNotice(err.message, true);
-    }
-  };
-  form.elements.key_select.onchange = async () => {
-    const p = form.elements.provider.value;
-    const val = form.elements.key_select.value;
-    const isNew = val === '__new__';
-    $('#ai-new-key-wrap').hidden = !isNew;
-    $('#ai-key-delete').hidden = isNew || !(state.ai_key_profiles?.[p]?.length);
-    if (!isNew && val) {
-      try {
-        await api('ai_keys', {op: 'select', provider: p, key_id: val});
-        populateKeys(p);
-        refreshModels(true);
-      } catch (err) {
-        setNotice(err.message, true);
-      }
-    }
-  };
-  $('#ai-key-save').onclick = async () => {
-    const p = form.elements.provider.value;
-    const rawKey = form.elements.api_key.value.trim();
-    const label = form.elements.key_label.value.trim();
-    if (!rawKey) return setNotice('Enter an API key to save.', true);
-    try {
-      await api('ai_keys', {op: 'add', provider: p, api_key: rawKey, label});
-      form.elements.api_key.value = '';
-      form.elements.key_label.value = '';
-      populateKeys(p);
-      refreshModels(false);
-    } catch (err) {
-      setNotice(err.message, true);
-    }
-  };
-  $('#ai-key-delete').onclick = async () => {
-    const p = form.elements.provider.value;
-    const kid = form.elements.key_select.value;
-    if (!kid || kid === '__new__') return;
-    try {
-      await api('ai_keys', {op: 'delete', provider: p, key_id: kid});
-      populateKeys(p);
-    } catch (err) {
-      setNotice(err.message, true);
-    }
-  };
-  form.elements.provider.onchange = () => {
-    persistAiPrefs({ai_provider: form.elements.provider.value});
-    syncProvider();
-  };
-  form.elements.model_select.onchange = () => {
-    const isCustom = form.elements.model_select.value === '__custom__';
-    $('#ai-custom-model-wrap').hidden = !isCustom;
-    form.elements.model_custom.required = isCustom;
-    saveCurrentModel();
-  };
-  form.elements.model_custom.onchange = saveCurrentModel;
-  form.elements.base_url.onchange = () => persistAiPrefs({ai_base_url: form.elements.base_url.value.trim()});
-  form.elements.thinking.onchange = () => persistAiPrefs({ai_thinking: form.elements.thinking.value});
-  $('#ai-refresh-models').onclick = () => refreshModels(false);
-  syncProvider();
-  $('#ai-cancel').onclick = () => $('#modal').close();
-  form.onsubmit = async event => {
-    event.preventDefault();
-    const f = Object.fromEntries(new FormData(form));
-    const model = f.model_select === '__custom__' ? f.model_custom.trim() : f.model_select;
-    const isNewKey = f.key_select === '__new__';
-    persistAiPrefs({ai_provider: f.provider, ai_base_url: f.base_url || '', ai_sub_cli: f.sub_cli || 'opencode', ai_thinking: f.thinking || 'auto', ...(model ? {ai_selected_models: {[f.provider]: model}} : {})});
-    const btn = $('button[type=submit]', form);
-    btn.disabled = true;
-    try {
-      await api('ai_maintain', {
-        provider: f.provider,
-        model,
-        thinking: f.thinking || 'auto',
-        base_url: effectiveBase(f.provider),
-        api_key: (f.provider !== 'subscription' && isNewKey) ? (f.api_key || '') : '',
-        key_label: (f.provider !== 'subscription' && isNewKey) ? (f.key_label || '') : '',
-        key_id: (f.provider !== 'subscription' && !isNewKey) ? (f.key_select || '') : '',
-        prompt: f.prompt || '',
-      }, {timeoutMs: 60000});
-      if (isNewKey && f.api_key?.trim()) {
-        form.elements.api_key.value = '';
-        form.elements.key_label.value = '';
-      }
-      if (f.provider !== 'subscription') populateKeys(f.provider);
-    } catch (error) {
-      const aiLog = $('#ai-log');
-      aiLog.textContent = (aiLog.textContent ? aiLog.textContent + '\n' : '') + 'Error: ' + error.message;
-      aiLog.scrollTop = aiLog.scrollHeight;
-    } finally {
-      btn.disabled = false;
-    }
-  };
-  const termHistory = [];
-  let histIdx = 0;
-  const termInput = $('#ai-term-input');
-  $('#ai-stop').onclick = () => api('ai_cancel').catch(err => setNotice(err.message, true));
-  $('#ai-term-clear').onclick = () => api('ai_terminal', {input: 'clear'}).catch(err => setNotice(err.message, true));
-  termInput.addEventListener('keydown', e => {
-    if (e.key === 'ArrowUp' && termHistory.length) {
-      e.preventDefault();
-      histIdx = Math.max(0, histIdx - 1);
-      termInput.value = termHistory[histIdx] || '';
-    } else if (e.key === 'ArrowDown' && termHistory.length) {
-      e.preventDefault();
-      histIdx = Math.min(termHistory.length, histIdx + 1);
-      termInput.value = termHistory[histIdx] || '';
-    } else if (e.key.toLowerCase() === 'l' && e.ctrlKey) {
-      e.preventDefault();
-      api('ai_terminal', {input: 'clear'}).catch(() => {});
-    }
+function toggleAiSettings(show) {
+  aiSettings.hidden = !show;
+  $('#ai-settings-toggle').setAttribute('aria-expanded', String(show));
+  if (show) aiSettingsFields.provider.focus();
+}
+function toggleAiPanel(show) {
+  if (show && !token) return;
+  const firstOpen = show && !aiReady;
+  aiPanel.hidden = !show;
+  const button = $('#ai-maintain');
+  button.setAttribute('aria-expanded', String(show));
+  if (!show) {
+    button.focus({preventScroll: true});
+    return;
+  }
+  if (firstOpen) initializeAi();
+  renderAi();
+  aiOutput.scrollTop = aiOutput.scrollHeight;
+  (aiSettings.hidden ? aiInput : aiSettingsFields.provider).focus({preventScroll: true});
+}
+function setAiMode(mode) {
+  aiMode = mode;
+  const maintain = mode === 'maintain';
+  $$('[data-ai-mode]', aiComposer).forEach(button => {
+    button.setAttribute('aria-pressed', String(button.dataset.aiMode === mode));
   });
-  $('#ai-term-bar').onsubmit = async e => {
-    e.preventDefault();
-    const input = termInput.value.trim();
-    if (!input) return;
-    termHistory.push(input);
-    histIdx = termHistory.length;
-    termInput.value = '';
-    const f = Object.fromEntries(new FormData(form));
-    const model = f.model_select === '__custom__' ? f.model_custom.trim() : f.model_select;
-    try {
-      await api('ai_terminal', {
-        input,
-        provider: f.provider,
-        model,
-        thinking: f.thinking || 'auto',
-        base_url: effectiveBase(f.provider),
-        key_id: (f.provider !== 'subscription' && f.key_select !== '__new__') ? (f.key_select || '') : '',
-      }, {timeoutMs: 60000});
-    } catch (err) {
-      const aiLog = $('#ai-log');
-      aiLog.textContent = (aiLog.textContent ? aiLog.textContent + '\n' : '') + 'Error: ' + err.message;
-      aiLog.scrollTop = aiLog.scrollHeight;
-    }
-  };
-  $('#ai-fixes').onclick = async e => {
-    const btn = e.target.closest('button[data-fix-id]');
-    if (!btn) return;
-    const isAdmin = btn.dataset.admin === '1';
-    if (isAdmin && !window.confirm('This fix requires administrator privileges (pkexec). Run it now?')) return;
-    try {
-      await api('ai_fix', {id: btn.dataset.fixId});
-    } catch (err) {
-      $('#ai-log').textContent += '\nError: ' + err.message;
-    }
-  };
-  render();
+  aiInput.setAttribute('aria-label', maintain ? 'Catalog maintenance request' : 'Message to AI');
+  aiInput.placeholder = maintain
+    ? 'Describe an app to add or check…'
+    : 'Ask about an app or type !command…';
+  $('#ai-composer-hint').textContent = maintain
+    ? 'Leave blank to audit the whole catalog'
+    : 'Enter to send · Shift+Enter for a new line';
+  $('#ai-send').textContent = maintain ? 'Run maintenance' : 'Send';
+  renderAi();
 }
-$('#ai-maintain').onclick = openAiMaintain;
+
+async function aiAction(path, data) {
+  if (aiRequest || !token) return false;
+  setAiError();
+  aiRequest = true;
+  renderAi();
+  try {
+    await api(path, data);
+    return true;
+  } catch (err) {
+    setAiError(err.message);
+    return false;
+  } finally {
+    aiRequest = false;
+    renderAi();
+  }
+}
+function saveAiSettings(patch) {
+  post('prefs', patch).catch(err => setAiError(err.message));
+}
+function aiOptions() {
+  return {
+    provider: aiProvider(),
+    model: aiSettingsFields.model.value.trim(),
+    thinking: aiSettingsFields.thinking.value,
+    base_url: aiProvider() === 'subscription' ? aiCli() : aiSettingsFields.base_url.value.trim(),
+    key_id: aiProvider() === 'subscription' || aiSettingsFields.key_select.value === '__new__' ? '' : aiSettingsFields.key_select.value,
+  };
+}
+function renderAiModelList() {
+  const list = aiModels[aiModelScope()] || [];
+  $('#ai-models').replaceChildren(...list.map(model => new Option(model)));
+}
+function renderAiConnection() {
+  const provider = aiProvider();
+  const name = aiSettingsFields.provider.selectedOptions[0].textContent;
+  const cli = aiSettingsFields.sub_cli.selectedOptions[0].textContent;
+  const key = aiSettingsFields.key_select.value;
+  let label = name;
+  if (provider === 'subscription') label = state.ai_cli_tools?.[aiCli()] ? cli : `${cli} · CLI unavailable`;
+  else if (provider !== 'custom') {
+    label += key && key !== '__new__' ? ' · Key saved' : state.ai_keys?.[provider] ? ' · Key configured' : ' · Add an API key';
+  }
+  $('#ai-connection').textContent = label;
+  $('#ai-sub-login').disabled = !state.ai_cli_tools?.[aiCli()];
+}
+function renderAiKeys() {
+  const select = aiSettingsFields.key_select;
+  const keys = state.ai_key_profiles?.[aiProvider()] || [];
+  select.replaceChildren(...keys.map(key => new Option(key.label, key.id)), new Option('Add an API key…', '__new__'));
+  const active = state.ai_active_keys?.[aiProvider()];
+  select.value = keys.some(key => key.id === active) ? active : keys[0]?.id || '__new__';
+  renderAiKeySelection();
+}
+function renderAiKeySelection() {
+  const subscription = aiProvider() === 'subscription';
+  const adding = aiSettingsFields.key_select.value === '__new__';
+  $('#ai-new-key-wrap').hidden = subscription || !adding;
+  $('#ai-key-delete').hidden = adding;
+  renderAiConnection();
+}
+function resetAiModelLookup() {
+  aiModelRequest++;
+  $('#ai-refresh-models').disabled = false;
+  $('#ai-model-hint').hidden = true;
+}
+function renderAiProvider() {
+  const provider = aiProvider();
+  const subscription = provider === 'subscription';
+  $('#ai-sub-wrap').hidden = !subscription;
+  $('#ai-key-wrap').hidden = subscription;
+  $('#ai-base-wrap').hidden = provider !== 'custom';
+  aiSettingsFields.api_key.value = '';
+  aiSettingsFields.key_label.value = '';
+  if (subscription) renderAiKeySelection();
+  else renderAiKeys();
+  aiSettingsFields.model.value = aiSelectedModels[aiModelScope()] || '';
+  resetAiModelLookup();
+  renderAiModelList();
+}
+function initializeAi() {
+  let legacy = {};
+  try { legacy = JSON.parse(localStorage.getItem('launchcraft-ai-prefs') || '{}') || {}; } catch {}
+  const prefs = {...legacy, ...state.prefs};
+  const available = ['codex', 'opencode', 'claude', 'gemini'].find(cli => state.ai_cli_tools?.[cli]);
+  const providerWithKey = ['openai', 'anthropic', 'gemini', 'openrouter', 'custom'].find(provider => state.ai_keys?.[provider]);
+  const chooseStoredOption = (field, value, fallback) => {
+    field.value = [...field.options].some(option => option.value === value) ? value : fallback;
+  };
+  chooseStoredOption(aiSettingsFields.provider, prefs.ai_provider, providerWithKey || (available ? 'subscription' : 'openai'));
+  chooseStoredOption(aiSettingsFields.sub_cli, prefs.ai_sub_cli, available || 'codex');
+  aiSettingsFields.base_url.value = prefs.ai_base_url || '';
+  chooseStoredOption(aiSettingsFields.thinking, prefs.ai_thinking, 'auto');
+  aiModels = {...state.ai_models};
+  aiSelectedModels = {...(state.prefs?.ai_selected_models ?? legacy.ai_selected_models)};
+  if (aiSelectedModels.subscription && prefs.ai_sub_cli) {
+    const oldScope = `subscription:${prefs.ai_sub_cli}`;
+    aiSelectedModels[oldScope] ??= aiSelectedModels.subscription;
+    if (state.prefs?.ai_selected_models?.subscription) {
+      saveAiSettings({ai_selected_models: {[oldScope]: aiSelectedModels[oldScope], subscription: ''}});
+    }
+  }
+  aiReady = true;
+  renderAiProvider();
+  const provider = aiProvider();
+  if (!state.ai_running && !state.ai_report &&
+      ((provider === 'subscription' && !state.ai_cli_tools?.[aiCli()]) ||
+       (provider === 'custom' && !aiSettingsFields.base_url.value) ||
+       (provider !== 'subscription' && provider !== 'custom' && !state.ai_keys?.[provider]))) {
+    toggleAiSettings(true);
+  }
+}
+
+$('#ai-maintain').onclick = () => toggleAiPanel(aiPanel.hidden);
+$('#ai-hide').onclick = () => toggleAiPanel(false);
+$('#ai-settings-toggle').onclick = () => {
+  toggleAiSettings(aiSettings.hidden);
+  if (aiSettings.hidden) aiInput.focus();
+};
+aiSettings.onsubmit = event => event.preventDefault();
+aiSettingsFields.provider.onchange = () => {
+  setAiError();
+  saveAiSettings({ai_provider: aiProvider()});
+  renderAiProvider();
+};
+aiSettingsFields.sub_cli.onchange = () => {
+  setAiError();
+  saveAiSettings({ai_sub_cli: aiCli()});
+  renderAiProvider();
+};
+aiSettingsFields.base_url.onchange = () => {
+  resetAiModelLookup();
+  saveAiSettings({ai_base_url: aiSettingsFields.base_url.value.trim()});
+};
+aiSettingsFields.thinking.onchange = () => saveAiSettings({ai_thinking: aiSettingsFields.thinking.value});
+aiSettingsFields.model.onchange = () => {
+  const scope = aiModelScope();
+  const model = aiSettingsFields.model.value.trim();
+  aiSelectedModels[scope] = model;
+  saveAiSettings({ai_selected_models: {[scope]: model}});
+};
+aiSettingsFields.key_select.onchange = async () => {
+  setAiError();
+  resetAiModelLookup();
+  const {provider, key_id} = aiOptions();
+  renderAiKeySelection();
+  if (key_id && !await aiAction('ai_keys', {op: 'select', provider, key_id}) && provider === aiProvider()) renderAiKeys();
+};
+$('#ai-key-save').onclick = async () => {
+  const provider = aiProvider();
+  const api_key = aiSettingsFields.api_key.value.trim();
+  if (!api_key) return setAiError('Enter an API key to save.');
+  const label = aiSettingsFields.key_label.value.trim();
+  if (await aiAction('ai_keys', {op: 'add', provider, api_key, label}) && provider === aiProvider()) renderAiProvider();
+};
+$('#ai-key-delete').onclick = async () => {
+  const {provider, key_id} = aiOptions();
+  if (key_id && await aiAction('ai_keys', {op: 'delete', provider, key_id}) && provider === aiProvider()) renderAiProvider();
+};
+$('#ai-sub-login').onclick = async () => {
+  setAiError();
+  try {
+    await post('ai_sub_login', {cli: aiCli()});
+    const hint = $('#ai-model-hint');
+    hint.textContent = 'Finish signing in from the terminal window.';
+    hint.hidden = false;
+  } catch (err) {
+    setAiError(err.message);
+  }
+};
+$('#ai-refresh-models').onclick = async () => {
+  const request = ++aiModelRequest;
+  const button = $('#ai-refresh-models');
+  const hint = $('#ai-model-hint');
+  const {provider, key_id, base_url} = aiOptions();
+  const scope = aiModelScope();
+  button.disabled = true;
+  hint.hidden = false;
+  hint.textContent = 'Loading models…';
+  try {
+    const result = await post('ai_models', {provider, key_id, base_url}, {timeoutMs: 20000});
+    if (request !== aiModelRequest) return;
+    aiModels[scope] = result.models || [];
+    renderAiModelList();
+    hint.textContent = result.models?.length
+      ? `${result.models.length} models available in the Model field.`
+      : 'Enter a model ID or use the provider default.';
+  } catch (err) {
+    if (request === aiModelRequest) hint.textContent = err.message;
+  } finally {
+    if (request === aiModelRequest) button.disabled = false;
+  }
+};
+$$('[data-ai-mode]', aiComposer).forEach(button => {
+  button.onclick = () => {
+    setAiMode(button.dataset.aiMode);
+    aiInput.focus();
+  };
+});
+aiComposer.onsubmit = async event => {
+  event.preventDefault();
+  if ($('#ai-send').disabled) return;
+  const draft = aiInput.value;
+  const input = draft.trim();
+  const maintain = aiMode === 'maintain';
+  const options = aiOptions();
+  const accepted = await (maintain
+    ? aiAction('ai_maintain', {...options, prompt: input})
+    : aiAction('ai_terminal', {...options, input}));
+  if (accepted && aiInput.value === draft) {
+    aiInput.value = '';
+    renderAi();
+  }
+};
+aiInput.oninput = renderAi;
+aiInput.onkeydown = event => {
+  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+    event.preventDefault();
+    aiComposer.requestSubmit();
+  }
+};
+$('#ai-clear').onclick = () => aiAction('ai_terminal', {input: 'clear'});
+$('#ai-stop').onclick = () => aiAction('ai_cancel');
+$('#ai-fixes').onclick = event => {
+  const button = event.target.closest('button[data-fix-id]');
+  if (!button) return;
+  if (button.dataset.admin === '1' && !window.confirm('Run this fix with administrator privileges?')) return;
+  aiAction('ai_fix', {id: button.dataset.fixId});
+};
+aiPanel.onkeydown = event => {
+  if (event.key === 'Escape' && !event.defaultPrevented) toggleAiPanel(false);
+  if (event.key.toLowerCase() === 'l' && event.ctrlKey && !$('#ai-clear').disabled) {
+    event.preventDefault();
+    $('#ai-clear').click();
+  }
+};
 $('#update-all').onclick = async () => {
   const btn = $('#update-all');
   const prevText = btn.textContent;
@@ -1112,10 +1165,23 @@ $('#update-all').onclick = async () => {
 applyTheme(currentTheme, false, false);
 applyZoom(zoom, false);
 setView(view, false);
+async function syncState() {
+  const response = await fetch('/api/state');
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error);
+  token = result.token;
+  applyState(result);
+}
 async function connect() {
   try {
+    let reconnecting = false;
     events = new EventSource('/events');
     events.addEventListener('state', event => applyState(JSON.parse(event.data)));
+    events.addEventListener('ai', event => applyAiState(JSON.parse(event.data)));
+    events.addEventListener('refresh-progress', event => {
+      refreshProgress = JSON.parse(event.data);
+      renderRefresh();
+    });
     events.addEventListener('progress', event => {
       const job = JSON.parse(event.data);
       const a = state.apps.find(a => a.id === job.id);
@@ -1127,14 +1193,17 @@ async function connect() {
     });
     events.addEventListener('error', event => {
       if (event.data) setNotice(JSON.parse(event.data).message, true);
-      else setNotice('Connection interrupted. Reconnecting… Relaunch LaunchCraft if the server has closed.', true);
+      else {
+        reconnecting = true;
+        setNotice('Connection interrupted. Reconnecting… Reopen Armin Launcher if the server has closed.', true);
+      }
     });
-    events.addEventListener('connected', () => {if (token) setNotice('Connected to local launcher.');});
-    const response = await fetch('/api/state');
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error);
-    token = result.token;
-    applyState(result);
+    events.addEventListener('connected', () => {
+      if (!reconnecting) return;
+      reconnecting = false;
+      syncState().catch(error => setNotice(error.message, true));
+    });
+    await syncState();
   } catch (error) {setNotice(error.message, true);}
 }
 window.addEventListener('pagehide', () => events?.close());

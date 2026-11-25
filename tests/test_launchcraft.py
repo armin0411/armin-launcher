@@ -325,6 +325,73 @@ class InstallTests(Fixture):
         self.assertEqual(engine.warnings, [])
 
 
+class RefreshTests(Fixture):
+    def write_apps(self, ids):
+        apps = [dict(copy.deepcopy(APP), id=app_id) for app_id in ids]
+        atomic_json(self.catalog, dict(version=1, apps=apps))
+
+    def test_release_checks_overlap(self):
+        self.write_apps(('sample', 'second', 'third'))
+        engine = self.engine()
+        all_started = threading.Barrier(3)
+
+        def release(app):
+            all_started.wait(timeout=2)
+            return {'tag': 'v2'}
+
+        with patch.object(engine, 'github_release', side_effect=release):
+            engine.refresh()
+
+        self.assertEqual(set(engine.state['releases']), {'sample', 'second', 'third'})
+        self.assertEqual(engine.warnings, [])
+
+    def test_refresh_deadline_preserves_last_release_and_ignores_late_result(self):
+        self.write_apps(('sample', 'slow'))
+        engine = self.engine()
+        engine.state['releases']['slow'] = {'tag': 'v1'}
+        engine.state['release_sources']['slow'] = APP['source'].copy()
+        allow_slow_result = threading.Event()
+        slow_finished = threading.Event()
+
+        def release(app):
+            if app['id'] == 'slow':
+                allow_slow_result.wait(timeout=3)
+                slow_finished.set()
+            return {'tag': 'v2'}
+
+        with patch.object(engine, 'github_release', side_effect=release), \
+                patch('launcher.RefreshRun.TIMEOUT', .25), patch('launcher.ssl.create_default_context'), \
+                patch.object(engine, 'emit') as emit:
+            try:
+                start = time.monotonic()
+                engine.refresh()
+                self.assertLess(time.monotonic() - start, 1)
+            finally:
+                allow_slow_result.set()
+            self.assertTrue(slow_finished.wait(timeout=1))
+
+        self.assertEqual(engine.state['releases'], {'sample': {'tag': 'v2'}, 'slow': {'tag': 'v1'}})
+        self.assertEqual(json.loads(engine.state_path.read_text())['releases'], engine.state['releases'])
+        self.assertIn('Refresh timed out on 1 of 2 app checks', engine.warnings[0])
+        emit.assert_any_call('refresh-progress', {'completed': 0, 'total': 2})
+        emit.assert_any_call('refresh-progress', {'completed': 1, 'total': 2})
+
+    def test_refresh_skips_cached_release_after_source_edit(self):
+        engine = self.engine()
+        with patch.object(engine, 'github_release', return_value={'tag': 'v2'}):
+            engine.refresh()
+        self.assertEqual(engine.snapshot()['apps'][0]['latest'], 'v2')
+
+        changed = copy.deepcopy(APP)
+        changed['source']['repo'] = 'example/replacement'
+        atomic_json(self.catalog, dict(version=1, apps=[changed]))
+        with patch.object(engine, 'github_release', side_effect=TimeoutError):
+            engine.refresh()
+
+        self.assertIn('check timed out', engine.warnings[0])
+        self.assertIsNone(engine.snapshot()['apps'][0]['latest'])
+
+
 class ServerTests(Fixture):
     def sse(self, server):
         sock = socket.create_connection(('127.0.0.1', server.server_port))
